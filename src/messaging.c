@@ -1,79 +1,153 @@
 #include "messaging.h"
-#include "zelda_rtl.h"
-#include "variables.h"
-#include "snes/snes_regs.h"
+#include "ancilla.h"
+#include "assets.h"
+#include "attract.h"
 #include "dungeon.h"
 #include "hud.h"
 #include "load_gfx.h"
-#include "dungeon.h"
-#include "overworld.h"
-#include "variables.h"
-#include "ancilla.h"
-#include "player.h"
 #include "misc.h"
-#include "sprite.h"
-#include "player_oam.h"
-#include "attract.h"
 #include "nmi.h"
-#include "assets.h"
-
-static void WorldMap_AddSprite(int spr, uint8 big, uint8 flags, uint8 ch, uint16 x, uint16 y);
+#include "overworld.h"
+#include "player.h"
+#include "player_oam.h"
+#include "snes/snes_regs.h"
+#include "sprite.h"
+#include "variables.h"
+#include "zelda_rtl.h"
+// char* and returns void
+static void WorldMap_AddSprite(int spr, uint8 big, uint8 flags, uint8 ch,
+                               uint16 x, uint16 y);
 static bool WorldMap_CalculateOamCoordinates(Point16U *pt);
 
-static const int8 kDungMap_Tab0[14] = {-1, -1, -1, -1, -1, 2, 0, 10, 4, 8, -1, 6, 12, 14};
-static const uint16 kDungMap_Tab1[8] = {0x2108, 0x2109, 0x2109, 0x210a, 0x210b, 0x210c, 0x210d, 0x211d};
-static const uint16 kDungMap_Tab2[8] = {0x2118, 0x2119, 0xa109, 0x211a, 0x211b, 0x211c, 0x2118, 0xa11d};
-static const uint8 kDungMap_Tab3[14] = {0x60, 0x84, 0, 0xb, 0x32, 0x21, 0x33, 0x21, 0x38, 0x21, 0x3a, 0x21, 0x7f, 0x20};
-static const uint8 kDungMap_Tab4[14] = {0x60, 0xa4, 0, 0xb, 0x42, 0x21, 0x43, 0x21, 0x49, 0x21, 0x4a, 0x21, 0x7f, 0x20};
-static const uint16 kDungMap_Tab8[7] = {0x1b28, 0x1b29, 0x1b2a, 0x1b2b, 0x1b2c, 0x1b2d, 0x1b2e};
-static const uint16 kDungMap_Tab6[21] = {0xaa10, 0x100, 0x1b2f, 0xc910, 0x300, 0x1b2f, 0x1b2e, 0xe510, 0xb00, 0x1b2f, 0x1b2e, 0x5b2f, 0x1b2f, 0x1b2e, 0x1b2e, 0x311, 0x100, 0x1b2f, 0x411, 0xc40, 0x1b2e};
-static const uint16 kDungMap_Tab5[14] = {0x21, 0x23, 0x20, 0x21, 0x70, 0x12, 0x11, 0x212, 2, 0x217, 0x160, 0x12, 0x113, 0x171};
-static const uint16 kDungMap_Tab7[9] = {0x1223, 0x1263, 0x12a3, 0x12e3, 0x1323, 0x11e3, 0x11a3, 0x1163, 0x1123};
-static const uint16 kDungMap_Tab9[8] = {0xf26, 0xf27, 0x4f27, 0x4f26, 0x8f26, 0x8f27, 0xcf27, 0xcf26};
+static const int8 kDungMap_Tab0[14] = {-1, -1, -1, -1, -1, 2,  0,
+                                       10, 4,  8,  -1, 6,  12, 14};
+static const uint16 kDungMap_Tab1[8] = {0x2108, 0x2109, 0x2109, 0x210a,
+                                        0x210b, 0x210c, 0x210d, 0x211d};
+static const uint16 kDungMap_Tab2[8] = {0x2118, 0x2119, 0xa109, 0x211a,
+                                        0x211b, 0x211c, 0x2118, 0xa11d};
+static const uint8 kDungMap_Tab3[14] = {0x60, 0x84, 0,    0xb,  0x32,
+                                        0x21, 0x33, 0x21, 0x38, 0x21,
+                                        0x3a, 0x21, 0x7f, 0x20};
+static const uint8 kDungMap_Tab4[14] = {0x60, 0xa4, 0,    0xb,  0x42,
+                                        0x21, 0x43, 0x21, 0x49, 0x21,
+                                        0x4a, 0x21, 0x7f, 0x20};
+static const uint16 kDungMap_Tab8[7] = {0x1b28, 0x1b29, 0x1b2a, 0x1b2b,
+                                        0x1b2c, 0x1b2d, 0x1b2e};
+static const uint16 kDungMap_Tab6[21] = {
+    0xaa10, 0x100, 0x1b2f, 0xc910, 0x300,  0x1b2f, 0x1b2e,
+    0xe510, 0xb00, 0x1b2f, 0x1b2e, 0x5b2f, 0x1b2f, 0x1b2e,
+    0x1b2e, 0x311, 0x100,  0x1b2f, 0x411,  0xc40,  0x1b2e};
+static const uint16 kDungMap_Tab5[14] = {0x21,  0x23, 0x20,  0x21, 0x70,
+                                         0x12,  0x11, 0x212, 2,    0x217,
+                                         0x160, 0x12, 0x113, 0x171};
+static const uint16 kDungMap_Tab7[9] = {0x1223, 0x1263, 0x12a3, 0x12e3, 0x1323,
+                                        0x11e3, 0x11a3, 0x1163, 0x1123};
+static const uint16 kDungMap_Tab9[8] = {0xf26,  0xf27,  0x4f27, 0x4f26,
+                                        0x8f26, 0x8f27, 0xcf27, 0xcf26};
 static const uint16 kDungMap_Tab10[4] = {0xe2, 0xf8, 0x3a2, 0x3b8};
 static const uint16 kDungMap_Tab11[4] = {0x1f19, 0x5f19, 0x9f19, 0xdf19};
 static const uint16 kDungMap_Tab12[2] = {0xe4, 0x3a4};
 static const uint16 kDungMap_Tab13[2] = {0x1f1a, 0x9f1a};
 static const uint16 kDungMap_Tab14[2] = {0x122, 0x138};
 static const uint16 kDungMap_Tab15[2] = {0x1f1b, 0x5f1b};
-static const uint16 kDungMap_Tab16[8] = {0x1f1e, 0x1f1f, 0x1f20, 0x1f21, 0x1f22, 0x1f23, 0x1f24, 0x1f25};
+static const uint16 kDungMap_Tab16[8] = {0x1f1e, 0x1f1f, 0x1f20, 0x1f21,
+                                         0x1f22, 0x1f23, 0x1f24, 0x1f25};
 static const uint16 kDungMap_Tab23[744] = {
-  0xb61, 0x5361, 0x8b61, 0x8b62, 0xb60, 0xb63, 0x8b60, 0xb64, 0xb00, 0xb00, 0xb65, 0xb66, 0xb67, 0x4b67, 0x9367, 0xd367, 0xb60, 0x5360, 0x8b60, 0xcb60, 0xb6a, 0x4b6a, 0x4b6d, 0xb6d, 0x1368, 0x1369, 0xb00, 0xb00, 0xb6a, 0x136b, 0xb6c, 0xb6d,
-  0x136e, 0x4b6e, 0xb00, 0xb00, 0x136f, 0xb00, 0xb00, 0xb00, 0x1340, 0xb00, 0xb78, 0x1744, 0x536d, 0x136d, 0x4b76, 0xb76, 0xb70, 0xb71, 0xb72, 0x8b71, 0xb75, 0xb76, 0x8b75, 0x8b76, 0xb00, 0xb53, 0xb00, 0xb55, 0x1354, 0x5354, 0xb00, 0xb00,
-  0x4b53, 0xb00, 0xb56, 0xb57, 0xb00, 0xb59, 0xb00, 0x135e, 0x135a, 0x135b, 0x135f, 0x535f, 0xb5c, 0xb5d, 0x535e, 0xcb58, 0xb50, 0x4b50, 0x1352, 0x5352, 0xb00, 0xb40, 0x1345, 0xb46, 0x8b42, 0xb47, 0xb42, 0xb49, 0x1348, 0x5348, 0x174a, 0x574a,
-  0x4b47, 0xcb42, 0x4b49, 0x4b42, 0xb00, 0xb4b, 0xb00, 0xb4d, 0xb4c, 0x4b4c, 0xb4e, 0x4b4e, 0xb51, 0xb44, 0xb00, 0xb00, 0xb4f, 0x4b4f, 0x934f, 0xd34f, 0xb00, 0xb00, 0xb00, 0xb40, 0xb00, 0xb41, 0xb00, 0xb42, 0xb00, 0xb00, 0xb43, 0xb43,
-  0xb00, 0xb00, 0x9344, 0xb00, 0x1340, 0xb00, 0x1341, 0xb00, 0x1740, 0xb40, 0xb42, 0xb7d, 0x4b7a, 0xb7a, 0xb7e, 0x4b7e, 0xb40, 0x8b4d, 0x4bba, 0xb55, 0xb40, 0x8b55, 0x1378, 0xcb53, 0x4b76, 0x4b75, 0x13bb, 0x53bb, 0x4b7f, 0x4b42, 0xb83, 0x13bc,
-  0xb00, 0xb00, 0xb79, 0xb00, 0xb6e, 0x4b7c, 0xb00, 0xb41, 0x1340, 0x8b55, 0xb42, 0xb7b, 0x8b42, 0x9344, 0x1341, 0xb00, 0xb53, 0x9344, 0x8b53, 0x9344, 0x8b42, 0x9344, 0xb42, 0x9344, 0x934d, 0xb00, 0x8b53, 0x9344, 0xb00, 0xb00, 0xb40, 0xb00,
-  0xb41, 0xb00, 0x1384, 0xb00, 0xbb8, 0x13b9, 0x4b85, 0xcb7c, 0xb87, 0x13b0, 0x4b7b, 0x9344, 0xb00, 0xb00, 0xb40, 0xb00, 0xb91, 0x5391, 0xb9c, 0x4b9c, 0x8b42, 0x1392, 0xb93, 0x1394, 0xb95, 0xb96, 0x9395, 0x8b96, 0xb97, 0xb98, 0x8b97, 0x8b98,
-  0x1799, 0x5799, 0x9799, 0xd799, 0x4b98, 0x4b97, 0xcb98, 0xcb97, 0x937b, 0xb00, 0xb7b, 0xb00, 0xba6, 0x4ba6, 0xcb7a, 0x8b7a, 0xb8e, 0x4b8e, 0x938e, 0xcb8e, 0x934d, 0xb8f, 0x1390, 0x5390, 0xb00, 0xb00, 0xb00, 0x8b48, 0xb00, 0x934e, 0xb00, 0x8b4d,
-  0x8b72, 0x1346, 0xb45, 0xb46, 0x5744, 0x1744, 0xb00, 0xb00, 0x134d, 0xb00, 0x8b54, 0xb00, 0x1349, 0x1349, 0xb00, 0xb00, 0xb4b, 0x8b48, 0xb72, 0x4b72, 0xb00, 0xb74, 0xb00, 0xbb0, 0xb71, 0x1747, 0x17af, 0xb4b, 0xb6f, 0x1370, 0xb4b, 0xb00,
-  0xb6b, 0x8b6c, 0x8b6b, 0xbad, 0xb73, 0xb00, 0x13ae, 0xb46, 0x176b, 0x576b, 0xb6a, 0x4b6a, 0x1368, 0x5368, 0x1369, 0x5369, 0x8b4e, 0xb00, 0x9354, 0xb00, 0xb00, 0xb00, 0xb00, 0x5377, 0xb00, 0x974d, 0xb00, 0x4b7b, 0xb40, 0x8b4d, 0xb51, 0xb8d,
-  0x537a, 0x137a, 0x4b42, 0x8b40, 0xb00, 0xb00, 0xb00, 0xb00, 0xb00, 0xb00, 0xb40, 0xb00, 0xcb7a, 0x576e, 0xb00, 0xb00, 0xb6e, 0xb9f, 0xb00, 0x4ba5, 0x13a0, 0x13a1, 0xba2, 0xba3, 0xba4, 0xb00, 0xba5, 0xb00, 0xb40, 0x8b55, 0xb42, 0xcb87,
-  0x8b95, 0xba7, 0x8b42, 0xbaf, 0x4b78, 0xb00, 0x4b78, 0xb00, 0x8b42, 0xb51, 0xb78, 0x8b51, 0xba8, 0xba9, 0xbac, 0x8ba9, 0xbaa, 0x17ab, 0x13b4, 0x8bab, 0x17b1, 0xb41, 0x4b44, 0x4b42, 0xb00, 0xbad, 0xb00, 0x13ae, 0x1340, 0xbb7, 0xb42, 0xbb6,
-  0xb00, 0xb00, 0x139d, 0x139e, 0xb00, 0xb00, 0xb00, 0xb79, 0xb00, 0xb00, 0x8b42, 0xb86, 0xb42, 0x8b7b, 0x8b42, 0xb7b, 0xb87, 0x8b7b, 0x9387, 0xb7b, 0xb40, 0x13b3, 0x1378, 0xb8d, 0x8b42, 0xb88, 0x5378, 0xb40, 0x4b44, 0xd342, 0x97b5, 0x4b78,
-  0x13b3, 0x8b55, 0x4b7b, 0xb8d, 0xb89, 0x138a, 0xb8b, 0xb8c, 0xb00, 0xb7c, 0xb00, 0xb00, 0xb00, 0x9348, 0xb00, 0xb56, 0xb00, 0xb00, 0xb88, 0xb00, 0xb00, 0xb48, 0xb00, 0xb00, 0xb00, 0x9348, 0x1786, 0xb65, 0xb00, 0xb00, 0xcb5a, 0xb00,
-  0xb00, 0x5388, 0xb00, 0xb00, 0x4b5a, 0xb00, 0xb00, 0xb00, 0xb00, 0xcb5b, 0x13ab, 0xbac, 0xcb5a, 0xb00, 0x137e, 0xb00, 0xb00, 0x137e, 0xb00, 0xb00, 0xb00, 0x8b48, 0x1783, 0x1384, 0xb00, 0xb00, 0x1385, 0xb00, 0xb00, 0x537e, 0xb00, 0xb00,
-  0xb00, 0x8b48, 0xb43, 0xcb43, 0xb00, 0xb00, 0x1379, 0x137a, 0xb5a, 0x137b, 0xb00, 0xb00, 0xb00, 0x8b48, 0x137f, 0x1380, 0xb00, 0xb00, 0x1381, 0x1382, 0xb00, 0xb48, 0xb00, 0xb00, 0xb00, 0xb00, 0x1387, 0x1377, 0x5746, 0xb47, 0x1349, 0xb48,
-  0x1375, 0x4b42, 0x174a, 0x574a, 0xb43, 0x1344, 0xb45, 0x1746, 0x1742, 0x5742, 0x8b42, 0xcb42, 0x1375, 0x5375, 0x8b42, 0xcb42, 0x4b40, 0x1340, 0xb41, 0x4b41, 0x4b46, 0xb71, 0x1786, 0x8b71, 0x1347, 0xb4d, 0xb65, 0xb5b, 0xb00, 0xb00, 0x9348, 0xb00,
-  0xb00, 0xb00, 0xb00, 0x8b48, 0x4b66, 0x8b65, 0x4b5b, 0xb65, 0x9365, 0xb66, 0xb63, 0x8b66, 0x4b51, 0xb5f, 0xcb76, 0xb60, 0xb64, 0x4b4f, 0x4b60, 0x8b76, 0x4b76, 0xb61, 0xd376, 0x1362, 0x4b61, 0xb76, 0xcb58, 0x8b51, 0xb00, 0xb00, 0x5746, 0xb5e,
-  0xb00, 0xb00, 0xb5e, 0xb46, 0xb00, 0xb00, 0x8b48, 0xb00, 0xb4f, 0xb51, 0xcb76, 0x8b76, 0x5351, 0xb51, 0x8b4f, 0x8b51, 0x4b76, 0xb76, 0xcb51, 0x8b58, 0xb54, 0xb00, 0x8b66, 0xb00, 0x9348, 0x8b48, 0xb56, 0x4b45, 0xb00, 0xb57, 0xb00, 0xb59,
-  0x4b50, 0xb58, 0xcb50, 0x8b50, 0x5758, 0x1751, 0xcb58, 0x8b51, 0xb56, 0x4b56, 0xb65, 0x5756, 0x9348, 0x8b48, 0xb4c, 0xb4b, 0xb4d, 0xb00, 0x8b54, 0xb00, 0xb4f, 0xb50, 0x8b4f, 0x8b50, 0x4b50, 0xb51, 0xcb58, 0x8b51, 0xb52, 0xb54, 0xb53, 0x9354,
-  0x9748, 0x9748, 0x138d, 0x138e, 0x1391, 0x1392, 0x138c, 0x138f, 0x1393, 0x1390, 0x9393, 0x138f, 0x1394, 0x1395, 0x138e, 0x138c, 0x175d, 0x1399, 0x975d, 0x538f, 0x1397, 0x1398, 0x179a, 0x138c, 0x1399, 0x1766, 0x138f, 0xd75d, 0x538e, 0x538f, 0x1391, 0x1392,
-  0x139b, 0x539b, 0x139c, 0x539c, 0x138f, 0x138e, 0x5392, 0x5391, 0x138a, 0x538a, 0x138b, 0x538b, 0xb00, 0xcb5b, 0xb00, 0x8b54, 0x4b74, 0x13a6, 0xb00, 0x4b48, 0x13a0, 0x13a1, 0x538e, 0x138e, 0xd38e, 0x53a3, 0x13a4, 0xb00, 0x97aa, 0xb00, 0x538e, 0x1399,
-  0x13a4, 0xb00, 0x138e, 0xb00, 0xb00, 0x5393, 0xb00, 0x574e, 0x4b7d, 0xb00, 0x8b7d, 0x139f, 0x97aa, 0x13a4, 0x13a9, 0x53a9, 0x13a5, 0x13a6, 0x93a5, 0xd3a5, 0xd38e, 0x938e, 0x13a4, 0x13aa, 0xb00, 0x13a6, 0xb00, 0x8b5f, 0x139b, 0x13a6, 0x139c, 0x53a2,
-  0xb00, 0xb00, 0x138c, 0xb00, 0x9394, 0x139e, 0xb00, 0xb00,
+    0xb61,  0x5361, 0x8b61, 0x8b62, 0xb60,  0xb63,  0x8b60, 0xb64,  0xb00,
+    0xb00,  0xb65,  0xb66,  0xb67,  0x4b67, 0x9367, 0xd367, 0xb60,  0x5360,
+    0x8b60, 0xcb60, 0xb6a,  0x4b6a, 0x4b6d, 0xb6d,  0x1368, 0x1369, 0xb00,
+    0xb00,  0xb6a,  0x136b, 0xb6c,  0xb6d,  0x136e, 0x4b6e, 0xb00,  0xb00,
+    0x136f, 0xb00,  0xb00,  0xb00,  0x1340, 0xb00,  0xb78,  0x1744, 0x536d,
+    0x136d, 0x4b76, 0xb76,  0xb70,  0xb71,  0xb72,  0x8b71, 0xb75,  0xb76,
+    0x8b75, 0x8b76, 0xb00,  0xb53,  0xb00,  0xb55,  0x1354, 0x5354, 0xb00,
+    0xb00,  0x4b53, 0xb00,  0xb56,  0xb57,  0xb00,  0xb59,  0xb00,  0x135e,
+    0x135a, 0x135b, 0x135f, 0x535f, 0xb5c,  0xb5d,  0x535e, 0xcb58, 0xb50,
+    0x4b50, 0x1352, 0x5352, 0xb00,  0xb40,  0x1345, 0xb46,  0x8b42, 0xb47,
+    0xb42,  0xb49,  0x1348, 0x5348, 0x174a, 0x574a, 0x4b47, 0xcb42, 0x4b49,
+    0x4b42, 0xb00,  0xb4b,  0xb00,  0xb4d,  0xb4c,  0x4b4c, 0xb4e,  0x4b4e,
+    0xb51,  0xb44,  0xb00,  0xb00,  0xb4f,  0x4b4f, 0x934f, 0xd34f, 0xb00,
+    0xb00,  0xb00,  0xb40,  0xb00,  0xb41,  0xb00,  0xb42,  0xb00,  0xb00,
+    0xb43,  0xb43,  0xb00,  0xb00,  0x9344, 0xb00,  0x1340, 0xb00,  0x1341,
+    0xb00,  0x1740, 0xb40,  0xb42,  0xb7d,  0x4b7a, 0xb7a,  0xb7e,  0x4b7e,
+    0xb40,  0x8b4d, 0x4bba, 0xb55,  0xb40,  0x8b55, 0x1378, 0xcb53, 0x4b76,
+    0x4b75, 0x13bb, 0x53bb, 0x4b7f, 0x4b42, 0xb83,  0x13bc, 0xb00,  0xb00,
+    0xb79,  0xb00,  0xb6e,  0x4b7c, 0xb00,  0xb41,  0x1340, 0x8b55, 0xb42,
+    0xb7b,  0x8b42, 0x9344, 0x1341, 0xb00,  0xb53,  0x9344, 0x8b53, 0x9344,
+    0x8b42, 0x9344, 0xb42,  0x9344, 0x934d, 0xb00,  0x8b53, 0x9344, 0xb00,
+    0xb00,  0xb40,  0xb00,  0xb41,  0xb00,  0x1384, 0xb00,  0xbb8,  0x13b9,
+    0x4b85, 0xcb7c, 0xb87,  0x13b0, 0x4b7b, 0x9344, 0xb00,  0xb00,  0xb40,
+    0xb00,  0xb91,  0x5391, 0xb9c,  0x4b9c, 0x8b42, 0x1392, 0xb93,  0x1394,
+    0xb95,  0xb96,  0x9395, 0x8b96, 0xb97,  0xb98,  0x8b97, 0x8b98, 0x1799,
+    0x5799, 0x9799, 0xd799, 0x4b98, 0x4b97, 0xcb98, 0xcb97, 0x937b, 0xb00,
+    0xb7b,  0xb00,  0xba6,  0x4ba6, 0xcb7a, 0x8b7a, 0xb8e,  0x4b8e, 0x938e,
+    0xcb8e, 0x934d, 0xb8f,  0x1390, 0x5390, 0xb00,  0xb00,  0xb00,  0x8b48,
+    0xb00,  0x934e, 0xb00,  0x8b4d, 0x8b72, 0x1346, 0xb45,  0xb46,  0x5744,
+    0x1744, 0xb00,  0xb00,  0x134d, 0xb00,  0x8b54, 0xb00,  0x1349, 0x1349,
+    0xb00,  0xb00,  0xb4b,  0x8b48, 0xb72,  0x4b72, 0xb00,  0xb74,  0xb00,
+    0xbb0,  0xb71,  0x1747, 0x17af, 0xb4b,  0xb6f,  0x1370, 0xb4b,  0xb00,
+    0xb6b,  0x8b6c, 0x8b6b, 0xbad,  0xb73,  0xb00,  0x13ae, 0xb46,  0x176b,
+    0x576b, 0xb6a,  0x4b6a, 0x1368, 0x5368, 0x1369, 0x5369, 0x8b4e, 0xb00,
+    0x9354, 0xb00,  0xb00,  0xb00,  0xb00,  0x5377, 0xb00,  0x974d, 0xb00,
+    0x4b7b, 0xb40,  0x8b4d, 0xb51,  0xb8d,  0x537a, 0x137a, 0x4b42, 0x8b40,
+    0xb00,  0xb00,  0xb00,  0xb00,  0xb00,  0xb00,  0xb40,  0xb00,  0xcb7a,
+    0x576e, 0xb00,  0xb00,  0xb6e,  0xb9f,  0xb00,  0x4ba5, 0x13a0, 0x13a1,
+    0xba2,  0xba3,  0xba4,  0xb00,  0xba5,  0xb00,  0xb40,  0x8b55, 0xb42,
+    0xcb87, 0x8b95, 0xba7,  0x8b42, 0xbaf,  0x4b78, 0xb00,  0x4b78, 0xb00,
+    0x8b42, 0xb51,  0xb78,  0x8b51, 0xba8,  0xba9,  0xbac,  0x8ba9, 0xbaa,
+    0x17ab, 0x13b4, 0x8bab, 0x17b1, 0xb41,  0x4b44, 0x4b42, 0xb00,  0xbad,
+    0xb00,  0x13ae, 0x1340, 0xbb7,  0xb42,  0xbb6,  0xb00,  0xb00,  0x139d,
+    0x139e, 0xb00,  0xb00,  0xb00,  0xb79,  0xb00,  0xb00,  0x8b42, 0xb86,
+    0xb42,  0x8b7b, 0x8b42, 0xb7b,  0xb87,  0x8b7b, 0x9387, 0xb7b,  0xb40,
+    0x13b3, 0x1378, 0xb8d,  0x8b42, 0xb88,  0x5378, 0xb40,  0x4b44, 0xd342,
+    0x97b5, 0x4b78, 0x13b3, 0x8b55, 0x4b7b, 0xb8d,  0xb89,  0x138a, 0xb8b,
+    0xb8c,  0xb00,  0xb7c,  0xb00,  0xb00,  0xb00,  0x9348, 0xb00,  0xb56,
+    0xb00,  0xb00,  0xb88,  0xb00,  0xb00,  0xb48,  0xb00,  0xb00,  0xb00,
+    0x9348, 0x1786, 0xb65,  0xb00,  0xb00,  0xcb5a, 0xb00,  0xb00,  0x5388,
+    0xb00,  0xb00,  0x4b5a, 0xb00,  0xb00,  0xb00,  0xb00,  0xcb5b, 0x13ab,
+    0xbac,  0xcb5a, 0xb00,  0x137e, 0xb00,  0xb00,  0x137e, 0xb00,  0xb00,
+    0xb00,  0x8b48, 0x1783, 0x1384, 0xb00,  0xb00,  0x1385, 0xb00,  0xb00,
+    0x537e, 0xb00,  0xb00,  0xb00,  0x8b48, 0xb43,  0xcb43, 0xb00,  0xb00,
+    0x1379, 0x137a, 0xb5a,  0x137b, 0xb00,  0xb00,  0xb00,  0x8b48, 0x137f,
+    0x1380, 0xb00,  0xb00,  0x1381, 0x1382, 0xb00,  0xb48,  0xb00,  0xb00,
+    0xb00,  0xb00,  0x1387, 0x1377, 0x5746, 0xb47,  0x1349, 0xb48,  0x1375,
+    0x4b42, 0x174a, 0x574a, 0xb43,  0x1344, 0xb45,  0x1746, 0x1742, 0x5742,
+    0x8b42, 0xcb42, 0x1375, 0x5375, 0x8b42, 0xcb42, 0x4b40, 0x1340, 0xb41,
+    0x4b41, 0x4b46, 0xb71,  0x1786, 0x8b71, 0x1347, 0xb4d,  0xb65,  0xb5b,
+    0xb00,  0xb00,  0x9348, 0xb00,  0xb00,  0xb00,  0xb00,  0x8b48, 0x4b66,
+    0x8b65, 0x4b5b, 0xb65,  0x9365, 0xb66,  0xb63,  0x8b66, 0x4b51, 0xb5f,
+    0xcb76, 0xb60,  0xb64,  0x4b4f, 0x4b60, 0x8b76, 0x4b76, 0xb61,  0xd376,
+    0x1362, 0x4b61, 0xb76,  0xcb58, 0x8b51, 0xb00,  0xb00,  0x5746, 0xb5e,
+    0xb00,  0xb00,  0xb5e,  0xb46,  0xb00,  0xb00,  0x8b48, 0xb00,  0xb4f,
+    0xb51,  0xcb76, 0x8b76, 0x5351, 0xb51,  0x8b4f, 0x8b51, 0x4b76, 0xb76,
+    0xcb51, 0x8b58, 0xb54,  0xb00,  0x8b66, 0xb00,  0x9348, 0x8b48, 0xb56,
+    0x4b45, 0xb00,  0xb57,  0xb00,  0xb59,  0x4b50, 0xb58,  0xcb50, 0x8b50,
+    0x5758, 0x1751, 0xcb58, 0x8b51, 0xb56,  0x4b56, 0xb65,  0x5756, 0x9348,
+    0x8b48, 0xb4c,  0xb4b,  0xb4d,  0xb00,  0x8b54, 0xb00,  0xb4f,  0xb50,
+    0x8b4f, 0x8b50, 0x4b50, 0xb51,  0xcb58, 0x8b51, 0xb52,  0xb54,  0xb53,
+    0x9354, 0x9748, 0x9748, 0x138d, 0x138e, 0x1391, 0x1392, 0x138c, 0x138f,
+    0x1393, 0x1390, 0x9393, 0x138f, 0x1394, 0x1395, 0x138e, 0x138c, 0x175d,
+    0x1399, 0x975d, 0x538f, 0x1397, 0x1398, 0x179a, 0x138c, 0x1399, 0x1766,
+    0x138f, 0xd75d, 0x538e, 0x538f, 0x1391, 0x1392, 0x139b, 0x539b, 0x139c,
+    0x539c, 0x138f, 0x138e, 0x5392, 0x5391, 0x138a, 0x538a, 0x138b, 0x538b,
+    0xb00,  0xcb5b, 0xb00,  0x8b54, 0x4b74, 0x13a6, 0xb00,  0x4b48, 0x13a0,
+    0x13a1, 0x538e, 0x138e, 0xd38e, 0x53a3, 0x13a4, 0xb00,  0x97aa, 0xb00,
+    0x538e, 0x1399, 0x13a4, 0xb00,  0x138e, 0xb00,  0xb00,  0x5393, 0xb00,
+    0x574e, 0x4b7d, 0xb00,  0x8b7d, 0x139f, 0x97aa, 0x13a4, 0x13a9, 0x53a9,
+    0x13a5, 0x13a6, 0x93a5, 0xd3a5, 0xd38e, 0x938e, 0x13a4, 0x13aa, 0xb00,
+    0x13a6, 0xb00,  0x8b5f, 0x139b, 0x13a6, 0x139c, 0x53a2, 0xb00,  0xb00,
+    0x138c, 0xb00,  0x9394, 0x139e, 0xb00,  0xb00,
 };
 static const uint16 kDungMap_Tab21[3] = {137, 167, 79};
 static const uint16 kDungMap_Tab22[3] = {169, 119, 190};
 static const uint16 kDungMap_Tab24[2] = {0x1f, 0x7f};
-static const uint16 kDungMap_Tab25[14] = {15, 15, 200, 51, 32, 6, 90, 144, 41, 222, 7, 172, 164, 13};
-static const int16 kDungMap_Tab28[14] = {-1, -1, 1, 1, 6, 0xff, 0xff, 0xff, 0xfe, 0xf9, 5, 0xff, 0xfd, 6};
+static const uint16 kDungMap_Tab25[14] = {15,  15, 200, 51, 32,  6,   90,
+                                          144, 41, 222, 7,  172, 164, 13};
+static const int16 kDungMap_Tab28[14] = {-1,   -1,   1,    1, 6,    0xff, 0xff,
+                                         0xff, 0xfe, 0xf9, 5, 0xff, 0xfd, 6};
 static PlayerHandlerFunc *const kDungMapInit[] = {
-  &Module0E_03_01_00_PrepMapGraphics,
-  &Module0E_03_01_01_DrawLEVEL,
-  &Module0E_03_01_02_DrawFloorsBackdrop,
-  &Module0E_03_01_03_DrawRooms,
-  &DungeonMap_DrawRoomMarkers,
+    &Module0E_03_01_00_PrepMapGraphics,    &Module0E_03_01_01_DrawLEVEL,
+    &Module0E_03_01_02_DrawFloorsBackdrop, &Module0E_03_01_03_DrawRooms,
+    &DungeonMap_DrawRoomMarkers,
 };
 static const uint8 kDungMap_Tab38[4] = {0x39, 0x3b, 0x3d, 0x3b};
 static const int8 kDungMap_Tab29[4] = {-9, 8, -9, 8};
@@ -81,98 +155,132 @@ static const int8 kDungMap_Tab30[4] = {-8, -8, 9, 9};
 static const uint8 kDungMap_Tab31[4] = {0xf1, 0xb1, 0x71, 0x31};
 static const uint8 kDungMap_Tab32[4] = {0xc, 0xc, 8, 0xa};
 static const uint8 kDungMap_Tab33[8] = {187, 171, 155, 139, 123, 107, 91, 75};
-static const uint8 kDungMap_Tab34[8] = {0x1e, 0x1f, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25};
+static const uint8 kDungMap_Tab34[8] = {0x1e, 0x1f, 0x20, 0x21,
+                                        0x22, 0x23, 0x24, 0x25};
 static const uint8 kDungMap_Tab35[2] = {0, 8};
 static const uint8 kDungMap_Tab36[4] = {0x37, 0x38, 0x38, 0x37};
-static const int16 kDungMap_Tab37[14] = { -1, -1, 0x808, 8, 0, 8, 0x808, 8, 0x808, 0x800, 0x404, 0x808, 8, 8 };
+static const int16 kDungMap_Tab37[14] = {
+    -1, -1, 0x808, 8, 0, 8, 0x808, 8, 0x808, 0x800, 0x404, 0x808, 8, 8};
 static const int8 kDungMap_Tab39[2] = {-4, 4};
 static const int8 kDungMap_Tab40[2] = {4, -4};
 static const int16 kDungMap_Tab26[2] = {0x60, -0x60};
 static PlayerHandlerFunc *const kDungMapSubmodules[] = {
-  &DungMap_Backup,
-  &Module0E_03_01_DrawMap,
-  &DungMap_LightenUpMap,
-  &DungeonMap_HandleInputAndSprites,
-  &DungMap_4,
-  &DungMap_FadeMapToBlack,
-  &DungeonMap_RecoverGFX,
-  &ToggleStarTilesAndAdvance,
-  &DungMap_RestoreOld,
+    &DungMap_Backup,
+    &Module0E_03_01_DrawMap,
+    &DungMap_LightenUpMap,
+    &DungeonMap_HandleInputAndSprites,
+    &DungMap_4,
+    &DungMap_FadeMapToBlack,
+    &DungeonMap_RecoverGFX,
+    &ToggleStarTilesAndAdvance,
+    &DungMap_RestoreOld,
 };
 static const uint16 kText_Positions[2] = {0x6125, 0x6244};
 static const uint16 kSrmOffsets[4] = {0, 0x500, 0xa00, 0xf00};
-static const int8 kText_InitializationData[32] = {0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0x39, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x1c, 4, 0, 0, 0, 0, 0};
-static const uint16 kText_BorderTiles[9] = {0x28f3, 0x28f4, 0x68f3, 0x28c8, 0x387f, 0x68c8, 0xa8f3, 0xa8f4, 0xe8f3};
+static const int8 kText_InitializationData[32] = {
+    0, 0, 0, 0, 0, 0, 0, 0, 1, 0,    0, 0, 0x39, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0x1c, 4, 0, 0,    0, 0, 0};
+static const uint16 kText_BorderTiles[9] = {
+    0x28f3, 0x28f4, 0x68f3, 0x28c8, 0x387f, 0x68c8, 0xa8f3, 0xa8f4, 0xe8f3};
 static const uint8 kText_CommandLengths[25] = {
-  1, 1, 1, 1, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1,
-  2, 2, 2, 2, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 1, 1, 1, 1, 1,
 };
-static const uint8 kVWF_RenderCharacter_setMasks[8] = {0x80, 0x40, 0x20, 0x10, 8, 4, 2, 1};
+static const uint8 kVWF_RenderCharacter_setMasks[8] = {0x80, 0x40, 0x20, 0x10,
+                                                       8,    4,    2,    1};
 static const uint16 kVWF_RenderCharacter_renderPos[3] = {0, 0x2a0, 0x540};
 static const uint16 kVWF_RenderCharacter_linePositions[3] = {0, 0x40, 0x80};
 static const uint16 kVWF_RowPositions[3] = {0, 2, 4};
-static const uint16 kText_WaitDurations[16] = {31, 63, 94, 125, 156, 188, 219, 250, 281, 313, 344, 375, 406, 438, 469, 500};
+static const uint16 kText_WaitDurations[16] = {31,  63,  94,  125, 156, 188,
+                                               219, 250, 281, 313, 344, 375,
+                                               406, 438, 469, 500};
 static PlayerHandlerFunc *const kText_Render[] = {
-  &RenderText_Draw_Border,
-  &RenderText_Draw_BorderIncremental,
-  &RenderText_Draw_CharacterTilemap,
-  &RenderText_Draw_MessageCharacters,
-  &RenderText_Draw_Finish,
+    &RenderText_Draw_Border,           &RenderText_Draw_BorderIncremental,
+    &RenderText_Draw_CharacterTilemap, &RenderText_Draw_MessageCharacters,
+    &RenderText_Draw_Finish,
 };
 static PlayerHandlerFunc *const kMessaging_Text[] = {
-  &Text_Initialize,
-  &Text_Render,
-  &RenderText_PostDeathSaveOptions,
+    &Text_Initialize,
+    &Text_Render,
+    &RenderText_PostDeathSaveOptions,
 };
 static const uint8 kOverworldMap_tab1[333] = {
-  0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xdf,
-  0xde, 0xdd, 0xdc, 0xdb, 0xda, 0xd8, 0xd7, 0xd6, 0xd5, 0xd4, 0xd3, 0xd2, 0xd1, 0xd0, 0xcf, 0xce,
-  0xcd, 0xcc, 0xcb, 0xca, 0xc9, 0xc7, 0xc6, 0xc5, 0xc4, 0xc3, 0xc2, 0xc1, 0xc0, 0xbf, 0xbe, 0xbd,
-  0xbc, 0xbb, 0xba, 0xb9, 0xb8, 0xb7, 0xb6, 0xb5, 0xb4, 0xb3, 0xb2, 0xb1, 0xb0, 0xaf, 0xae, 0xad,
-  0xac, 0xab, 0xaa, 0xa9, 0xa8, 0xa7, 0xa6, 0xa5, 0xa4, 0xa3, 0xa2, 0xa1, 0xa0, 0x9f, 0x9e, 0x9d,
-  0x9c, 0x9b, 0x9b, 0x9a, 0x99, 0x98, 0x97, 0x96, 0x95, 0x94, 0x93, 0x92, 0x91, 0x90, 0x8f, 0x8e,
-  0x8d, 0x8c, 0x8b, 0x8b, 0x8a, 0x89, 0x88, 0x87, 0x86, 0x85, 0x84, 0x83, 0x82, 0x81, 0x81, 0x80,
-  0x7f, 0x7e, 0x7d, 0x7c, 0x7b, 0x7a, 0x79, 0x79, 0x78, 0x77, 0x76, 0x75, 0x74, 0x73, 0x72, 0x72,
-  0x71, 0x70, 0x6f, 0x6e, 0x6d, 0x6c, 0x6c, 0x6b, 0x6a, 0x69, 0x68, 0x67, 0x67, 0x66, 0x65, 0x64,
-  0x63, 0x62, 0x62, 0x61, 0x60, 0x5f, 0x5e, 0x5d, 0x5d, 0x5c, 0x5b, 0x5a, 0x59, 0x59, 0x58, 0x57,
-  0x56, 0x55, 0x55, 0x54, 0x53, 0x52, 0x51, 0x51, 0x50, 0x4f, 0x4e, 0x4e, 0x4d, 0x4c, 0x4b, 0x4a,
-  0x4a, 0x49, 0x48, 0x47, 0x47, 0x46, 0x45, 0x44, 0x44, 0x43, 0x42, 0x41, 0x41, 0x40, 0x3f, 0x3e,
-  0x3e, 0x3d, 0x3c, 0x3c, 0x3b, 0x3a, 0x39, 0x39, 0x38, 0x37, 0x36, 0x36, 0x35, 0x34, 0x34, 0x33,
-  0x32, 0x32, 0x31, 0x30, 0x2f, 0x2f, 0x2e, 0x2d, 0x2d, 0x2c, 0x2b, 0x2b, 0x2a, 0x29, 0x29, 0x28,
-  0x27, 0x27, 0x26, 0x25, 0x25, 0x24, 0x23, 0x23, 0x22, 0x21, 0x21, 0x20, 0x1f, 0x1f, 0x1e, 0x1d,
-  0x1d, 0x1c, 0x1c, 0x1b, 0x1a, 0x1a, 0x19, 0x18, 0x18, 0x17, 0x17, 0x16, 0x15, 0x15, 0x14, 0x14,
-  0x13, 0x12, 0x12, 0x11, 0x10, 0x10,  0xf,  0xf,  0xe,  0xe,  0xd,  0xc,  0xc,  0xb,  0xb,  0xa,
-     9,    9,    8,    8,    7,    7,    6,    5,    5,    4,    4,    3,    3,    2,    1,    1,
-     0,    0,    0,    0, 0xff, 0xfe, 0xfe, 0xfd, 0xfc, 0xfc, 0xfb, 0xfb, 0xfa, 0xf9, 0xf9, 0xf8,
-  0xf7, 0xf7, 0xf6, 0xf5, 0xf4, 0xf4, 0xf3, 0xf2, 0xf2, 0xf1, 0xf0, 0xef, 0xee, 0xee, 0xed, 0xec,
-  0xeb, 0xea, 0xe9, 0xe8, 0xe8, 0xe7, 0xe6, 0xe5, 0xe4, 0xe3, 0xe2, 0xe1, 0xe0,
+    0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0, 0xe0,
+    0xe0, 0xe0, 0xe0, 0xdf, 0xde, 0xdd, 0xdc, 0xdb, 0xda, 0xd8, 0xd7, 0xd6,
+    0xd5, 0xd4, 0xd3, 0xd2, 0xd1, 0xd0, 0xcf, 0xce, 0xcd, 0xcc, 0xcb, 0xca,
+    0xc9, 0xc7, 0xc6, 0xc5, 0xc4, 0xc3, 0xc2, 0xc1, 0xc0, 0xbf, 0xbe, 0xbd,
+    0xbc, 0xbb, 0xba, 0xb9, 0xb8, 0xb7, 0xb6, 0xb5, 0xb4, 0xb3, 0xb2, 0xb1,
+    0xb0, 0xaf, 0xae, 0xad, 0xac, 0xab, 0xaa, 0xa9, 0xa8, 0xa7, 0xa6, 0xa5,
+    0xa4, 0xa3, 0xa2, 0xa1, 0xa0, 0x9f, 0x9e, 0x9d, 0x9c, 0x9b, 0x9b, 0x9a,
+    0x99, 0x98, 0x97, 0x96, 0x95, 0x94, 0x93, 0x92, 0x91, 0x90, 0x8f, 0x8e,
+    0x8d, 0x8c, 0x8b, 0x8b, 0x8a, 0x89, 0x88, 0x87, 0x86, 0x85, 0x84, 0x83,
+    0x82, 0x81, 0x81, 0x80, 0x7f, 0x7e, 0x7d, 0x7c, 0x7b, 0x7a, 0x79, 0x79,
+    0x78, 0x77, 0x76, 0x75, 0x74, 0x73, 0x72, 0x72, 0x71, 0x70, 0x6f, 0x6e,
+    0x6d, 0x6c, 0x6c, 0x6b, 0x6a, 0x69, 0x68, 0x67, 0x67, 0x66, 0x65, 0x64,
+    0x63, 0x62, 0x62, 0x61, 0x60, 0x5f, 0x5e, 0x5d, 0x5d, 0x5c, 0x5b, 0x5a,
+    0x59, 0x59, 0x58, 0x57, 0x56, 0x55, 0x55, 0x54, 0x53, 0x52, 0x51, 0x51,
+    0x50, 0x4f, 0x4e, 0x4e, 0x4d, 0x4c, 0x4b, 0x4a, 0x4a, 0x49, 0x48, 0x47,
+    0x47, 0x46, 0x45, 0x44, 0x44, 0x43, 0x42, 0x41, 0x41, 0x40, 0x3f, 0x3e,
+    0x3e, 0x3d, 0x3c, 0x3c, 0x3b, 0x3a, 0x39, 0x39, 0x38, 0x37, 0x36, 0x36,
+    0x35, 0x34, 0x34, 0x33, 0x32, 0x32, 0x31, 0x30, 0x2f, 0x2f, 0x2e, 0x2d,
+    0x2d, 0x2c, 0x2b, 0x2b, 0x2a, 0x29, 0x29, 0x28, 0x27, 0x27, 0x26, 0x25,
+    0x25, 0x24, 0x23, 0x23, 0x22, 0x21, 0x21, 0x20, 0x1f, 0x1f, 0x1e, 0x1d,
+    0x1d, 0x1c, 0x1c, 0x1b, 0x1a, 0x1a, 0x19, 0x18, 0x18, 0x17, 0x17, 0x16,
+    0x15, 0x15, 0x14, 0x14, 0x13, 0x12, 0x12, 0x11, 0x10, 0x10, 0xf,  0xf,
+    0xe,  0xe,  0xd,  0xc,  0xc,  0xb,  0xb,  0xa,  9,    9,    8,    8,
+    7,    7,    6,    5,    5,    4,    4,    3,    3,    2,    1,    1,
+    0,    0,    0,    0,    0xff, 0xfe, 0xfe, 0xfd, 0xfc, 0xfc, 0xfb, 0xfb,
+    0xfa, 0xf9, 0xf9, 0xf8, 0xf7, 0xf7, 0xf6, 0xf5, 0xf4, 0xf4, 0xf3, 0xf2,
+    0xf2, 0xf1, 0xf0, 0xef, 0xee, 0xee, 0xed, 0xec, 0xeb, 0xea, 0xe9, 0xe8,
+    0xe8, 0xe7, 0xe6, 0xe5, 0xe4, 0xe3, 0xe2, 0xe1, 0xe0,
 };
-static const uint8 kOverworldMapData[7] = {0x79, 0x6e, 0x6f, 0x6d, 0x7c, 0x6c, 0x7f};
-static const uint8 kBirdTravel_tab1[8] = {0x7f, 0x79, 0x6c, 0x6d, 0x6e, 0x6f, 0x7c, 0x7d};
-static const uint8 kBirdTravel_x_lo[8] = {0x80, 0xcf, 0x10, 0xb8, 0x30, 0x70, 0x70, 0xf0};
+static const uint8 kOverworldMapData[7] = {0x79, 0x6e, 0x6f, 0x6d,
+                                           0x7c, 0x6c, 0x7f};
+static const uint8 kBirdTravel_tab1[8] = {0x7f, 0x79, 0x6c, 0x6d,
+                                          0x6e, 0x6f, 0x7c, 0x7d};
+static const uint8 kBirdTravel_x_lo[8] = {0x80, 0xcf, 0x10, 0xb8,
+                                          0x30, 0x70, 0x70, 0xf0};
 static const uint8 kBirdTravel_x_hi[8] = {6, 0xc, 2, 8, 0xf, 0, 7, 0xe};
-static const uint8 kBirdTravel_y_lo[8] = {0x5b, 0x98, 0xc0, 0x20, 0x50, 0xb0, 0x30, 0x80};
+static const uint8 kBirdTravel_y_lo[8] = {0x5b, 0x98, 0xc0, 0x20,
+                                          0x50, 0xb0, 0x30, 0x80};
 static const uint8 kBirdTravel_y_hi[8] = {3, 5, 7, 0xb, 0xb, 0xf, 0xf, 0xf};
 static const uint8 kPendantBitMask[3] = {4, 1, 2};
 static const uint8 kCrystalBitMask[7] = {2, 0x40, 8, 0x20, 1, 4, 0x10};
-static const uint16 kOwMapCrystal0_x[9] = {0x7ff, 0x2c0, 0xd00, 0xf31, 0x6d, 0x7e0, 0xf40, 0xf40, 0x8dc};
-static const uint16 kOwMapCrystal0_y[9] = {0x730, 0x6a0, 0x710, 0x620, 0x70, 0x640, 0x620, 0x620, 0x30};
-static const uint16 kOwMapCrystal1_x[9] = {0xff00, 0xff00, 0xff00, 0x8d0, 0xff00, 0xff00, 0xff00, 0x82, 0xff00};
-static const uint16 kOwMapCrystal1_y[9] = {0xff00, 0xff00, 0xff00, 0x80, 0xff00, 0xff00, 0xff00, 0xb0, 0xff00};
-static const uint16 kOwMapCrystal2_x[9] = {0xff00, 0xff00, 0xff00, 0x108, 0xff00, 0xff00, 0xff00, 0xf11, 0xff00};
-static const uint16 kOwMapCrystal2_y[9] = {0xff00, 0xff00, 0xff00, 0xd70, 0xff00, 0xff00, 0xff00, 0x103, 0xff00};
-static const uint16 kOwMapCrystal3_x[9] = {0xff00, 0xff00, 0xff00, 0x6d, 0xff00, 0xff00, 0xff00, 0x1d0, 0xff00};
-static const uint16 kOwMapCrystal3_y[9] = {0xff00, 0xff00, 0xff00, 0x70, 0xff00, 0xff00, 0xff00, 0x780, 0xff00};
-static const uint16 kOwMapCrystal4_x[9] = {0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0x100, 0xff00};
-static const uint16 kOwMapCrystal4_y[9] = {0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xca0, 0xff00};
-static const uint16 kOwMapCrystal5_x[9] = {0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xca0, 0xff00};
-static const uint16 kOwMapCrystal5_y[9] = {0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xda0, 0xff00};
-static const uint16 kOwMapCrystal6_x[9] = {0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0x759, 0xff00};
-static const uint16 kOwMapCrystal6_y[9] = {0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xed0, 0xff00};
-static const uint16 kOwMapCrystal0_tab[9] = {0, 0, 0, 0x6038, 0x6234, 0x6632, 0x6434, 0x6434, 0x6632};
-static const uint16 kOwMapCrystal1_tab[9] = {0, 0, 0, 0x6032, 0, 0, 0, 0x6434, 0};
-static const uint16 kOwMapCrystal2_tab[9] = {0, 0, 0, 0x6034, 0, 0, 0, 0x6434, 0};
-static const uint16 kOwMapCrystal3_tab[9] = {0, 0, 0, 0x6234, 0, 0, 0, 0x6434, 0};
+static const uint16 kOwMapCrystal0_x[9] = {0x7ff, 0x2c0, 0xd00, 0xf31, 0x6d,
+                                           0x7e0, 0xf40, 0xf40, 0x8dc};
+static const uint16 kOwMapCrystal0_y[9] = {0x730, 0x6a0, 0x710, 0x620, 0x70,
+                                           0x640, 0x620, 0x620, 0x30};
+static const uint16 kOwMapCrystal1_x[9] = {
+    0xff00, 0xff00, 0xff00, 0x8d0, 0xff00, 0xff00, 0xff00, 0x82, 0xff00};
+static const uint16 kOwMapCrystal1_y[9] = {
+    0xff00, 0xff00, 0xff00, 0x80, 0xff00, 0xff00, 0xff00, 0xb0, 0xff00};
+static const uint16 kOwMapCrystal2_x[9] = {
+    0xff00, 0xff00, 0xff00, 0x108, 0xff00, 0xff00, 0xff00, 0xf11, 0xff00};
+static const uint16 kOwMapCrystal2_y[9] = {
+    0xff00, 0xff00, 0xff00, 0xd70, 0xff00, 0xff00, 0xff00, 0x103, 0xff00};
+static const uint16 kOwMapCrystal3_x[9] = {
+    0xff00, 0xff00, 0xff00, 0x6d, 0xff00, 0xff00, 0xff00, 0x1d0, 0xff00};
+static const uint16 kOwMapCrystal3_y[9] = {
+    0xff00, 0xff00, 0xff00, 0x70, 0xff00, 0xff00, 0xff00, 0x780, 0xff00};
+static const uint16 kOwMapCrystal4_x[9] = {
+    0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0x100, 0xff00};
+static const uint16 kOwMapCrystal4_y[9] = {
+    0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xca0, 0xff00};
+static const uint16 kOwMapCrystal5_x[9] = {
+    0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xca0, 0xff00};
+static const uint16 kOwMapCrystal5_y[9] = {
+    0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xda0, 0xff00};
+static const uint16 kOwMapCrystal6_x[9] = {
+    0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0x759, 0xff00};
+static const uint16 kOwMapCrystal6_y[9] = {
+    0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xff00, 0xed0, 0xff00};
+static const uint16 kOwMapCrystal0_tab[9] = {
+    0, 0, 0, 0x6038, 0x6234, 0x6632, 0x6434, 0x6434, 0x6632};
+static const uint16 kOwMapCrystal1_tab[9] = {0, 0, 0,      0x6032, 0,
+                                             0, 0, 0x6434, 0};
+static const uint16 kOwMapCrystal2_tab[9] = {0, 0, 0,      0x6034, 0,
+                                             0, 0, 0x6434, 0};
+static const uint16 kOwMapCrystal3_tab[9] = {0, 0, 0,      0x6234, 0,
+                                             0, 0, 0x6434, 0};
 static const uint16 kOwMapCrystal4_tab[9] = {0, 0, 0, 0, 0, 0, 0, 0x6434, 0};
 static const uint16 kOwMapCrystal5_tab[9] = {0, 0, 0, 0, 0, 0, 0, 0x6434, 0};
 static const uint16 kOwMapCrystal6_tab[9] = {0, 0, 0, 0, 0, 0, 0, 0x6434, 0};
@@ -182,45 +290,39 @@ static const uint8 kOverworldMap_Timer[2] = {33, 12};
 static const int16 kOverworldMap_Table3[8] = {0, 0, 1, 2, -1, -2, 1, 2};
 static const int16 kOverworldMap_Table2[8] = {0, 0, 224, 480, -72, -224, 0, 0};
 static PlayerHandlerFunc *const kMessagingSubmodules[12] = {
-  &Module_Messaging_0,
-  &Hud_Module_Run,
-  &RenderText,
-  &Module0E_03_DungeonMap,
-  &Module0E_04_RedPotion,
-  &Module0E_05_DesertPrayer,
-  &Module_Messaging_6,
-  &Messaging_OverworldMap,
-  &Module0E_08_GreenPotion,
-  &Module0E_09_BluePotion,
-  &Module0E_0A_FluteMenu,
-  &Module0E_0B_SaveMenu,
+    &Module_Messaging_0,     &Hud_Module_Run,         &RenderText,
+    &Module0E_03_DungeonMap, &Module0E_04_RedPotion,  &Module0E_05_DesertPrayer,
+    &Module_Messaging_6,     &Messaging_OverworldMap, &Module0E_08_GreenPotion,
+    &Module0E_09_BluePotion, &Module0E_0A_FluteMenu,  &Module0E_0B_SaveMenu,
 };
-static const uint8 kDeath_AnimCtr0[15] = {0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 5};
-static const uint8 kDeath_AnimCtr1[15] = {5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 0x62};
+static const uint8 kDeath_AnimCtr0[15] = {0, 1, 2, 3, 0, 1, 2, 3,
+                                          0, 1, 2, 3, 4, 5, 5};
+static const uint8 kDeath_AnimCtr1[15] = {5, 5, 5, 5, 5, 5, 5,   5,
+                                          5, 5, 5, 5, 3, 3, 0x62};
 static const uint8 kDeath_SprFlags[2] = {0x20, 0x10};
 static const uint8 kDeath_SprChar0[2] = {0xea, 0xec};
 static const uint8 kDeath_SprY0[3] = {0x7f, 0x8f, 0x9f};
 const uint8 kHealthAfterDeath[21] = {
-  0x18, 0x18, 0x18, 0x18, 0x18, 0x20, 0x20, 0x28, 0x28, 0x30, 0x30, 0x38, 0x38, 0x38, 0x40, 0x40,
-  0x40, 0x48, 0x48, 0x48, 0x50,
+    0x18, 0x18, 0x18, 0x18, 0x18, 0x20, 0x20, 0x28, 0x28, 0x30, 0x30,
+    0x38, 0x38, 0x38, 0x40, 0x40, 0x40, 0x48, 0x48, 0x48, 0x50,
 };
 static PlayerHandlerFunc *const kModule_Death[16] = {
-  &GameOver_AdvanceImmediately,
-  &Death_Func1,
-  &GameOver_DelayBeforeIris,
-  &GameOver_IrisWipe,
-  &Death_Func4,
-  &GameOver_SplatAndFade,
-  &Death_Func6,
-  &Animate_GAMEOVER_Letters_bounce,
-  &GameOver_Finalize_GAMEOVR,
-  &GameOver_SaveAndOrContinue,
-  &GameOver_InitializeRevivalFairy,
-  &RevivalFairy_Main_bounce,
-  &GameOver_RiseALittle,
-  &GameOver_Restore0D,
-  &GameOver_Restore0E,
-  &GameOver_ResituateLink,
+    &GameOver_AdvanceImmediately,
+    &Death_Func1,
+    &GameOver_DelayBeforeIris,
+    &GameOver_IrisWipe,
+    &Death_Func4,
+    &GameOver_SplatAndFade,
+    &Death_Func6,
+    &Animate_GAMEOVER_Letters_bounce,
+    &GameOver_Finalize_GAMEOVR,
+    &GameOver_SaveAndOrContinue,
+    &GameOver_InitializeRevivalFairy,
+    &RevivalFairy_Main_bounce,
+    &GameOver_RiseALittle,
+    &GameOver_Restore0D,
+    &GameOver_Restore0E,
+    &GameOver_ResituateLink,
 };
 static const uint8 kLocationMenuStartPos[3] = {0, 1, 6};
 static void RunInterface();
@@ -240,9 +342,7 @@ void DungMap_4() {
     overworld_map_state--;
 }
 
-void Module_Messaging_6() {
-  assert(0);
-}
+void Module_Messaging_6() { assert(0); }
 
 void OverworldMap_SetupHdma() {
   static const uint32 kOverworldMap_TableLow[2] = {0xabdcf, 0xabdd6};
@@ -250,11 +350,9 @@ void OverworldMap_SetupHdma() {
   HdmaSetup(a, a, 0x42, (uint8)M7A, (uint8)M7D, 10);
 }
 
-const uint8 *GetLightOverworldTilemap() {
-  return kLightOverworldTilemap;
-}
+const uint8 *GetLightOverworldTilemap() { return kLightOverworldTilemap; }
 
-void SaveGameFile() {  // 80894a
+void SaveGameFile() { // 80894a
   int offs = ((srm_var1 >> 1) - 1) * 0x500;
   memcpy(g_zenv.sram + offs, save_dung_info, 0x500);
   memcpy(g_zenv.sram + offs + 0xf00, save_dung_info, 0x500);
@@ -267,14 +365,14 @@ void SaveGameFile() {  // 80894a
   ZeldaWriteSram();
 }
 
-void TransferMode7Characters() {  // 80e399
+void TransferMode7Characters() { // 80e399
   uint16 *dst = g_zenv.vram;
   const uint8 *src = kOverworldMapGfx;
   for (int i = 0; i != 0x4000; i++)
     HIBYTE(dst[i]) = src[i];
 }
 
-void Module0E_Interface() {  // 80f800
+void Module0E_Interface() { // 80f800
   bool skip_run = false;
   if (player_is_indoors) {
     if (submodule_index == 3) {
@@ -283,7 +381,8 @@ void Module0E_Interface() {  // 80f800
       Dungeon_PushBlock_Handler();
     }
   } else {
-    skip_run = ((submodule_index == 7 || submodule_index == 10) && overworld_map_state);
+    skip_run = ((submodule_index == 7 || submodule_index == 10) &&
+                overworld_map_state);
   }
   if (!skip_run) {
     Sprite_Main();
@@ -301,18 +400,22 @@ void Module0E_Interface() {  // 80f800
   BG1VOFS_copy = BG1VOFS_copy2 + bg1_y_offset;
 }
 
-void Module_Messaging_0() {  // 80f875
+void Module_Messaging_0() { // 80f875
   assert(0);
 }
 
-static void RunInterface() {  // 80f89a
+static void RunInterface() { // 80f89a
   kMessagingSubmodules[submodule_index]();
 }
 
-void Module0E_05_DesertPrayer() {  // 80f8b1
+void Module0E_05_DesertPrayer() { // 80f8b1
   switch (subsubmodule_index) {
-  case 0: ResetTransitionPropsAndAdvance_ResetInterface(); break;
-  case 1: ApplyPaletteFilter_bounce(); break;
+  case 0:
+    ResetTransitionPropsAndAdvance_ResetInterface();
+    break;
+  case 1:
+    ApplyPaletteFilter_bounce();
+    break;
   case 2:
     DesertPrayer_InitializeIrisHDMA();
     BYTE(palette_filter_countdown) = mosaic_target_level - 1;
@@ -328,7 +431,7 @@ void Module0E_05_DesertPrayer() {  // 80f8b1
   }
 }
 
-void Module0E_04_RedPotion() {  // 80f8fb
+void Module0E_04_RedPotion() { // 80f8fb
   if (Hud_RefillHealth()) {
     button_mask_b_y &= ~0x40;
     flag_update_hud_in_nmi++;
@@ -337,7 +440,7 @@ void Module0E_04_RedPotion() {  // 80f8fb
   }
 }
 
-void Module0E_08_GreenPotion() {  // 80f911
+void Module0E_08_GreenPotion() { // 80f911
   if (Hud_RefillMagicPower()) {
     button_mask_b_y &= ~0x40;
     flag_update_hud_in_nmi++;
@@ -346,14 +449,14 @@ void Module0E_08_GreenPotion() {  // 80f911
   }
 }
 
-void Module0E_09_BluePotion() {  // 80f918
+void Module0E_09_BluePotion() { // 80f918
   if (Hud_RefillHealth())
     submodule_index = 8;
   if (Hud_RefillMagicPower())
     submodule_index = 4;
 }
 
-void Module0E_0B_SaveMenu() {  // 80f9fa
+void Module0E_0B_SaveMenu() { // 80f9fa
   // This is the continue / save and quit menu
   if (!player_is_indoors)
     Overworld_DwDeathMountainPaletteAnimation();
@@ -379,7 +482,7 @@ void Module0E_0B_SaveMenu() {  // 80f9fa
   }
 }
 
-void Module1B_SpawnSelect() {  // 828586
+void Module1B_SpawnSelect() { // 828586
   RenderText();
   if (submodule_index)
     return;
@@ -393,7 +496,7 @@ void Module1B_SpawnSelect() {  // 828586
   which_starting_point = bak;
 }
 
-void CleanUpAndPrepDesertPrayerHDMA() {  // 82c7b8
+void CleanUpAndPrepDesertPrayerHDMA() { // 82c7b8
   HdmaSetup(0, 0x2c80c, 0x41, 0, (uint8)WH0, 0);
 
   W12SEL_copy = 0x33;
@@ -405,7 +508,7 @@ void CleanUpAndPrepDesertPrayerHDMA() {  // 82c7b8
   memset(hdma_table_dynamic, 0, 240 * sizeof(uint16));
 }
 
-void DesertPrayer_InitializeIrisHDMA() {  // 87ea06
+void DesertPrayer_InitializeIrisHDMA() { // 87ea06
   CleanUpAndPrepDesertPrayerHDMA();
   spotlight_var1 = 0x26;
   BYTE(spotlight_var2) = 0;
@@ -413,7 +516,7 @@ void DesertPrayer_InitializeIrisHDMA() {  // 87ea06
   subsubmodule_index++;
 }
 
-void DesertPrayer_BuildIrisHDMATable() {  // 87ea27
+void DesertPrayer_BuildIrisHDMATable() { // 87ea27
   uint16 r14 = link_y_coord - BG2VOFS_copy2 + 12;
   spotlight_y_lower = r14 - spotlight_var1;
   uint16 r4 = sign16(spotlight_y_lower) ? spotlight_y_lower : 0;
@@ -423,7 +526,8 @@ void DesertPrayer_BuildIrisHDMATable() {  // 87ea27
   spotlight_var4 = 1;
   do {
     uint16 r0 = 0x100, r2 = 0x100;
-    if (!(sign16(spotlight_y_lower) || (r4 >= spotlight_y_lower && r4 < spotlight_y_upper))) {
+    if (!(sign16(spotlight_y_lower) ||
+          (r4 >= spotlight_y_lower && r4 < spotlight_y_upper))) {
       k = (r4 - 1);
     } else if (spotlight_var1 < spotlight_var4) {
       spotlight_var4 = 1;
@@ -446,8 +550,9 @@ void DesertPrayer_BuildIrisHDMATable() {  // 87ea27
     uint8 t7 = (r2 < 256) ? r2 : 255;
     uint16 r6 = t7 << 8 | t6;
     if (k < 240)
-     hdma_table_dynamic[k] = (r6 == 0xffff) ? 0xff : r6;
-    if (sign16(spotlight_y_lower) || (r4 >= spotlight_y_lower && r4 < spotlight_y_upper)) {
+      hdma_table_dynamic[k] = (r6 == 0xffff) ? 0xff : r6;
+    if (sign16(spotlight_y_lower) ||
+        (r4 >= spotlight_y_lower && r4 < spotlight_y_upper)) {
       k = BYTE(spotlight_var4) - 2 + r14;
       if (k < 240)
         hdma_table_dynamic[k] = (r6 == 0xffff) ? 0xff : r6;
@@ -458,7 +563,8 @@ void DesertPrayer_BuildIrisHDMATable() {  // 87ea27
 
   if (subsubmodule_index != 4)
     return;
-  if (BYTE(spotlight_var2) != 1 && (filtered_joypad_H | filtered_joypad_L) & 0xc0) {
+  if (BYTE(spotlight_var2) != 1 &&
+      (filtered_joypad_H | filtered_joypad_L) & 0xc0) {
     BYTE(spotlight_var2) = 1;
     BYTE(spotlight_var1) >>= 1;
   }
@@ -491,39 +597,44 @@ void DesertPrayer_BuildIrisHDMATable() {  // 87ea27
   }
 }
 
-Pair16U DesertHDMA_CalculateIrisShapeLine() {  // 87ecdc
+Pair16U DesertHDMA_CalculateIrisShapeLine() { // 87ecdc
   static const uint8 kPrayingScene_Tab1[129] = {
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0xfe, 0xfe, 0xfe,
-    0xfd, 0xfd, 0xfd, 0xfd, 0xfc, 0xfc, 0xfc, 0xfb, 0xfb, 0xfb, 0xfa, 0xfa, 0xf9, 0xf9, 0xf8, 0xf8,
-    0xf7, 0xf7, 0xf6, 0xf6, 0xf5, 0xf5, 0xf4, 0xf3, 0xf3, 0xf2, 0xf1, 0xf1, 0xf0, 0xef, 0xee, 0xee,
-    0xed, 0xec, 0xeb, 0xea, 0xe9, 0xe9, 0xe8, 0xe7, 0xe6, 0xe5, 0xe4, 0xe3, 0xe2, 0xe1, 0xdf, 0xde,
-    0xdd, 0xdc, 0xdb, 0xda, 0xd8, 0xd7, 0xd6, 0xd5, 0xd3, 0xd2, 0xd0, 0xcf, 0xcd, 0xcc, 0xca, 0xc9,
-    0xc7, 0xc6, 0xc4, 0xc2, 0xc1, 0xbf, 0xbd, 0xbb, 0xb9, 0xb7, 0xb6, 0xb4, 0xb1, 0xaf, 0xad, 0xab,
-    0xa9, 0xa7, 0xa4, 0xa2, 0x9f, 0x9d, 0x9a, 0x97, 0x95, 0x92, 0x8f, 0x8c, 0x89, 0x86, 0x82, 0x7f,
-    0x7b, 0x78, 0x74, 0x70, 0x6c, 0x67, 0x63, 0x5e, 0x59, 0x53, 0x4d, 0x46, 0x3f, 0x37, 0x2d, 0x1f,
-    0,
+      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+      0xfe, 0xfe, 0xfe, 0xfe, 0xfd, 0xfd, 0xfd, 0xfd, 0xfc, 0xfc, 0xfc, 0xfb,
+      0xfb, 0xfb, 0xfa, 0xfa, 0xf9, 0xf9, 0xf8, 0xf8, 0xf7, 0xf7, 0xf6, 0xf6,
+      0xf5, 0xf5, 0xf4, 0xf3, 0xf3, 0xf2, 0xf1, 0xf1, 0xf0, 0xef, 0xee, 0xee,
+      0xed, 0xec, 0xeb, 0xea, 0xe9, 0xe9, 0xe8, 0xe7, 0xe6, 0xe5, 0xe4, 0xe3,
+      0xe2, 0xe1, 0xdf, 0xde, 0xdd, 0xdc, 0xdb, 0xda, 0xd8, 0xd7, 0xd6, 0xd5,
+      0xd3, 0xd2, 0xd0, 0xcf, 0xcd, 0xcc, 0xca, 0xc9, 0xc7, 0xc6, 0xc4, 0xc2,
+      0xc1, 0xbf, 0xbd, 0xbb, 0xb9, 0xb7, 0xb6, 0xb4, 0xb1, 0xaf, 0xad, 0xab,
+      0xa9, 0xa7, 0xa4, 0xa2, 0x9f, 0x9d, 0x9a, 0x97, 0x95, 0x92, 0x8f, 0x8c,
+      0x89, 0x86, 0x82, 0x7f, 0x7b, 0x78, 0x74, 0x70, 0x6c, 0x67, 0x63, 0x5e,
+      0x59, 0x53, 0x4d, 0x46, 0x3f, 0x37, 0x2d, 0x1f, 0,
   };
   static const uint8 kPrayingScene_Tab0[129] = {
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0xfe, 0xfd, 0xfd, 0xfc, 0xfc, 0xfb, 0xfa, 0xf9, 0xf8,
-    0xf7, 0xf6, 0xf5, 0xf4, 0xf3, 0xf1, 0xf0, 0xee, 0xed, 0xeb, 0xe9, 0xe8, 0xe6, 0xe4, 0xe2, 0xdf,
-    0xdd, 0xdb, 0xd8, 0xd6, 0xd3, 0xd0, 0xcd, 0xca, 0xc7, 0xc4, 0xc1, 0xbd, 0xb9, 0xb6, 0xb1, 0xad,
-    0xa9, 0xa4, 0x9f, 0x9a, 0x95, 0x8f, 0x89, 0x82, 0x7b, 0x74, 0x6c, 0x63, 0x59, 0x4d, 0x3f, 0x2d,
-    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,
-    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,
-    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,
-    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,
-    0,
+      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0xfe, 0xfd, 0xfd, 0xfc, 0xfc,
+      0xfb, 0xfa, 0xf9, 0xf8, 0xf7, 0xf6, 0xf5, 0xf4, 0xf3, 0xf1, 0xf0, 0xee,
+      0xed, 0xeb, 0xe9, 0xe8, 0xe6, 0xe4, 0xe2, 0xdf, 0xdd, 0xdb, 0xd8, 0xd6,
+      0xd3, 0xd0, 0xcd, 0xca, 0xc7, 0xc4, 0xc1, 0xbd, 0xb9, 0xb6, 0xb1, 0xad,
+      0xa9, 0xa4, 0x9f, 0x9a, 0x95, 0x8f, 0x89, 0x82, 0x7b, 0x74, 0x6c, 0x63,
+      0x59, 0x4d, 0x3f, 0x2d, 0,    0,    0,    0,    0,    0,    0,    0,
+      0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,
+      0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,
+      0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,
+      0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,
+      0,    0,    0,    0,    0,    0,    0,    0,    0,
   };
   uint8 t = snes_divide(BYTE(spotlight_var4) << 8, BYTE(spotlight_var1)) >> 1;
-  uint8 r6 = BYTE(spotlight_var2) ? kPrayingScene_Tab1[t] : kPrayingScene_Tab0[t];
+  uint8 r6 =
+      BYTE(spotlight_var2) ? kPrayingScene_Tab1[t] : kPrayingScene_Tab0[t];
   uint16 r8 = r6 * BYTE(spotlight_var1) >> 8;
   if (BYTE(spotlight_var2))
     r8 <<= 1;
-  Pair16U ret = { r6, r8 };
+  Pair16U ret = {r6, r8};
   return ret;
 }
 
-void Animate_GAMEOVER_Letters() {  // 88f4ca
+void Animate_GAMEOVER_Letters() { // 88f4ca
   switch (ancilla_type[0]) {
   case 0:
     submodule_index++;
@@ -540,8 +651,9 @@ void Animate_GAMEOVER_Letters() {  // 88f4ca
   }
 }
 
-void GameOverText_SweepLeft() {  // 88f4f6
-  static const uint8 kGameOverText_Tab1[8] = {0x40, 0x50, 0x60, 0x70, 0x88, 0x98, 0xa8, 0x40};
+void GameOverText_SweepLeft() { // 88f4f6
+  static const uint8 kGameOverText_Tab1[8] = {0x40, 0x50, 0x60, 0x70,
+                                              0x88, 0x98, 0xa8, 0x40};
 
   int k = flag_for_boomerang_in_place;
   cur_object_index = k;
@@ -569,8 +681,9 @@ draw:
   GameOverText_Draw();
 }
 
-void GameOverText_UnfurlRight() {  // 88f56d
-  static const uint8 kGameOverText_Tab2[8] = {0x58, 0x60, 0x68, 0x70, 0x88, 0x90, 0x98, 0xa0};
+void GameOverText_UnfurlRight() { // 88f56d
+  static const uint8 kGameOverText_Tab2[8] = {0x58, 0x60, 0x68, 0x70,
+                                              0x88, 0x90, 0x98, 0xa0};
 
   int k = flag_for_boomerang_in_place, end;
   cur_object_index = k;
@@ -595,18 +708,18 @@ draw:
   GameOverText_Draw();
 }
 
-void Module12_GameOver() {  // 89f290
+void Module12_GameOver() { // 89f290
   kModule_Death[submodule_index]();
   if (submodule_index != 9)
     LinkOam_Main();
 }
 
-void GameOver_AdvanceImmediately() {  // 89f2a2
+void GameOver_AdvanceImmediately() { // 89f2a2
   submodule_index++;
   Death_Func1();
 }
 
-void Death_Func1() {  // 89f2a4
+void Death_Func1() { // 89f2a4
   music_unk1_death = music_unk1;
   sound_effect_ambient_last_death = sound_effect_ambient_last;
   music_control = 241;
@@ -632,7 +745,7 @@ void Death_Func1() {  // 89f2a4
   submodule_index++;
 }
 
-void GameOver_DelayBeforeIris() {  // 89f33b
+void GameOver_DelayBeforeIris() { // 89f33b
   if (--some_menu_ctr)
     return;
   Death_InitializeGameOverLetters();
@@ -642,7 +755,7 @@ void GameOver_DelayBeforeIris() {  // 89f33b
   submodule_index++;
 }
 
-void GameOver_IrisWipe() {  // 89f350
+void GameOver_IrisWipe() { // 89f350
   PaletteFilter_RestoreBGSubstractiveStrict();
   main_palette_buffer[0] = main_palette_buffer[32];
   uint8 bak = main_module_index;
@@ -679,7 +792,7 @@ void GameOver_IrisWipe() {  // 89f350
   Death_PrepFaint();
 }
 
-void GameOver_SplatAndFade() {  // 89f3de
+void GameOver_SplatAndFade() { // 89f3de
   if (some_menu_ctr) {
     some_menu_ctr--;
     return;
@@ -710,7 +823,7 @@ void GameOver_SplatAndFade() {  // 89f3de
   submodule_index++;
 }
 
-void Death_Func6() {  // 89f458
+void Death_Func6() { // 89f458
   some_menu_ctr = 12;
   load_chr_halfslot_even_odd = 15;
   Graphics_LoadChrHalfSlot();
@@ -724,15 +837,15 @@ void Death_Func6() {  // 89f458
   Death_PlayerSwoon();
 }
 
-void Death_Func4() {  // 89f47e
+void Death_Func4() { // 89f47e
   Death_PlayerSwoon();
 }
 
-void Animate_GAMEOVER_Letters_bounce() {  // 89f483
+void Animate_GAMEOVER_Letters_bounce() { // 89f483
   Animate_GAMEOVER_Letters();
 }
 
-void GameOver_Finalize_GAMEOVR() {  // 89f488
+void GameOver_Finalize_GAMEOVR() { // 89f488
   Animate_GAMEOVER_Letters();
   uint8 bak1 = main_module_index;
   uint8 bak2 = submodule_index;
@@ -744,7 +857,7 @@ void GameOver_Finalize_GAMEOVR() {  // 89f488
   music_control = 11;
 }
 
-void GameOver_SaveAndOrContinue() {  // 89f4c1
+void GameOver_SaveAndOrContinue() { // 89f4c1
   GameOver_AnimateChoiceFairy();
   if (ancilla_type)
     Animate_GAMEOVER_Letters();
@@ -756,7 +869,7 @@ void GameOver_SaveAndOrContinue() {  // 89f4c1
     some_menu_ctr = 1;
     if (joypad1H_last & 12) {
       if (joypad1H_last & 4) {
-do_inc:
+      do_inc:
         if (++subsubmodule_index >= 3)
           subsubmodule_index = 0;
       } else {
@@ -774,7 +887,7 @@ do_inc:
   Death_Func15(subsubmodule_index != 2);
 }
 
-void Death_Func15(bool count_as_death) {  // 89f50f
+void Death_Func15(bool count_as_death) { // 89f50f
   music_control = 0xf1;
   if (player_is_indoors)
     Dungeon_FlagRoomData_Quadrants();
@@ -788,15 +901,18 @@ void Death_Func15(bool count_as_death) {  // 89f50f
     player_is_indoors = 0;
 
   ResetSomeThingsAfterDeath((uint8)dungeon_room_index);
-  if (follower_indicator == 6 || follower_indicator == 9 || follower_indicator == 10 || follower_indicator == 13)
+  if (follower_indicator == 6 || follower_indicator == 9 ||
+      follower_indicator == 10 || follower_indicator == 13)
     follower_indicator = 0;
 
-  death_var4 = link_health_current = kHealthAfterDeath[link_health_capacity >> 3];
+  death_var4 = link_health_current =
+      kHealthAfterDeath[link_health_capacity >> 3];
   uint8 i = BYTE(cur_palace_index_x2);
   if (i != 0xff)
     link_keys_earned_per_dungeon[(i == 2 ? 0 : i) >> 1] = link_num_keys;
   Sprite_ResetAll();
-  if (death_var2 == 0xffff && (!(enhanced_features0 & kFeatures0_MiscBugFixes) || count_as_death))
+  if (death_var2 == 0xffff &&
+      (!(enhanced_features0 & kFeatures0_MiscBugFixes) || count_as_death))
     death_save_counter++;
   death_var5++;
   if (subsubmodule_index != 1) {
@@ -851,22 +967,23 @@ void Death_Func15(bool count_as_death) {  // 89f50f
   }
 }
 
-void GameOver_AnimateChoiceFairy() {  // 89f67a
-  SetOamPlain(&oam_buf[0x14], 0x34, kDeath_SprY0[subsubmodule_index], kDeath_SprChar0[frame_counter >> 3 & 1], 0x78, 2);
+void GameOver_AnimateChoiceFairy() { // 89f67a
+  SetOamPlain(&oam_buf[0x14], 0x34, kDeath_SprY0[subsubmodule_index],
+              kDeath_SprChar0[frame_counter >> 3 & 1], 0x78, 2);
 }
 
-void GameOver_InitializeRevivalFairy() {  // 89f6a4
+void GameOver_InitializeRevivalFairy() { // 89f6a4
   ConfigureRevivalAncillae();
   link_hearts_filler = 56;
   submodule_index += 1;
   overworld_map_state = 0;
 }
 
-void RevivalFairy_Main_bounce() {  // 89f6b4
+void RevivalFairy_Main_bounce() { // 89f6b4
   RevivalFairy_Main();
 }
 
-void GameOver_RiseALittle() {  // 89f6b9
+void GameOver_RiseALittle() { // 89f6b9
   if (link_hearts_filler == 0) {
     memcpy(aux_palette_buffer, mapbak_palette, 256);
     memset(main_palette_buffer + 32, 0, 192);
@@ -880,7 +997,7 @@ void GameOver_RiseALittle() {  // 89f6b9
   Hud_RefillLogic();
 }
 
-void GameOver_Restore0D() {  // 89f71d
+void GameOver_Restore0D() { // 89f71d
   if (!is_doing_heart_animation) {
     load_chr_halfslot_even_odd = 1;
     Graphics_LoadChrHalfSlot();
@@ -891,13 +1008,13 @@ void GameOver_Restore0D() {  // 89f71d
   Hud_RefillLogic();
 }
 
-void GameOver_Restore0E() {  // 89f735
+void GameOver_Restore0E() { // 89f735
   Graphics_LoadChrHalfSlot();
   TS_copy = mapbak_TS;
   submodule_index++;
 }
 
-void GameOver_ResituateLink() {  // 89f742
+void GameOver_ResituateLink() { // 89f742
   PaletteFilter_RestoreBGAdditiveStrict();
   main_palette_buffer[0] = main_palette_buffer[32];
   if (BYTE(palette_filter_countdown) != 32)
@@ -914,7 +1031,7 @@ void GameOver_ResituateLink() {  // 89f742
   darkening_or_lightening_screen = mapbak_bg1_y_offset;
 }
 
-void Module0E_0A_FluteMenu() {  // 8ab730
+void Module0E_0A_FluteMenu() { // 8ab730
   switch (overworld_map_state) {
   case 0:
     WorldMap_FadeOut();
@@ -953,7 +1070,7 @@ void Module0E_0A_FluteMenu() {  // 8ab730
   }
 }
 
-void FluteMenu_HandleSelection() {  // 8ab78b
+void FluteMenu_HandleSelection() { // 8ab78b
   Point16U pt;
 
   if (some_menu_ctr == 0) {
@@ -992,13 +1109,15 @@ void FluteMenu_HandleSelection() {  // 8ab78b
     link_y_coord_spexit = kBirdTravel_y_hi[i] << 8 | kBirdTravel_y_lo[i];
 
     if (WorldMap_CalculateOamCoordinates(&pt))
-      WorldMap_AddSprite(i, 0, (i == birdtravel_var1[0]) ? 0x30 + (frame_counter & 6) : 0x32, kBirdTravel_tab1[i], pt.x, pt.y);
+      WorldMap_AddSprite(
+          i, 0, (i == birdtravel_var1[0]) ? 0x30 + (frame_counter & 6) : 0x32,
+          kBirdTravel_tab1[i], pt.x, pt.y);
   }
   link_x_coord_spexit = xbak;
   link_y_coord_spexit = ybak;
 }
 
-void FluteMenu_LoadSelectedScreen() {  // 8ab8c5
+void FluteMenu_LoadSelectedScreen() { // 8ab8c5
   save_ow_event_info[0x3b] &= ~0x20;
   save_ow_event_info[0x7b] &= ~0x20;
   save_dung_info[267] &= ~0x80;
@@ -1025,7 +1144,7 @@ void FluteMenu_LoadSelectedScreen() {  // 8ab8c5
   music_control = ZeldaIsPlayingMusicTrack(m & 0xf) ? 0xf3 : m & 0xf;
 }
 
-void Overworld_LoadOverlayAndMap() {  // 8ab948
+void Overworld_LoadOverlayAndMap() { // 8ab948
   uint16 bak1 = WORD(main_module_index);
   uint16 bak2 = WORD(overworld_map_state);
   Overworld_LoadAndBuildScreen();
@@ -1033,7 +1152,7 @@ void Overworld_LoadOverlayAndMap() {  // 8ab948
   WORD(main_module_index) = bak1;
 }
 
-void FluteMenu_FadeInAndQuack() {  // 8ab964
+void FluteMenu_FadeInAndQuack() { // 8ab964
   if (++INIDISP_copy == 15) {
     BirdTravel_Finish_Doit();
   } else {
@@ -1041,7 +1160,7 @@ void FluteMenu_FadeInAndQuack() {  // 8ab964
   }
 }
 
-void BirdTravel_Finish_Doit() {  // 8ab96c
+void BirdTravel_Finish_Doit() { // 8ab96c
   overworld_map_state = 0;
   subsubmodule_index = 0;
   main_module_index = saved_module_for_menu;
@@ -1051,7 +1170,7 @@ void BirdTravel_Finish_Doit() {  // 8ab96c
   Sprite_Main();
 }
 
-void Messaging_OverworldMap() {  // 8ab98b
+void Messaging_OverworldMap() { // 8ab98b
   switch (overworld_map_state) {
   case 0:
     WorldMap_FadeOut();
@@ -1080,7 +1199,7 @@ void Messaging_OverworldMap() {  // 8ab98b
   }
 }
 
-void WorldMap_FadeOut() {  // 8ab9a3
+void WorldMap_FadeOut() { // 8ab9a3
   if (--INIDISP_copy)
     return;
   mapbak_HDMAEN = HDMAEN_copy;
@@ -1110,7 +1229,7 @@ void WorldMap_FadeOut() {  // 8ab9a3
   BGMODE_copy = 7;
 }
 
-void WorldMap_LoadLightWorldMap() {  // 8aba30
+void WorldMap_LoadLightWorldMap() { // 8aba30
   WorldMap_FillTilemapWithEF();
   TM_copy = 0x11;
   TS_copy = 0;
@@ -1125,7 +1244,7 @@ void WorldMap_LoadLightWorldMap() {  // 8aba30
   overworld_map_state++;
 }
 
-void WorldMap_LoadDarkWorldMap() {  // 8aba7a
+void WorldMap_LoadDarkWorldMap() { // 8aba7a
   if (overworld_screen_index & 0x40) {
     memcpy(&uvram, kDarkOverworldTilemap, 1024);
     nmi_subroutine_index = 21;
@@ -1133,26 +1252,26 @@ void WorldMap_LoadDarkWorldMap() {  // 8aba7a
   overworld_map_state++;
 }
 
-void WorldMap_LoadSpriteGFX() {  // 8aba9a
+void WorldMap_LoadSpriteGFX() { // 8aba9a
   load_chr_halfslot_even_odd = 0x10;
   Graphics_LoadChrHalfSlot();
   load_chr_halfslot_even_odd = 0;
   overworld_map_state++;
 }
 
-void WorldMap_Brighten() {  // 8abaaa
+void WorldMap_Brighten() { // 8abaaa
   if (++INIDISP_copy == 15)
     overworld_map_state++;
 }
 
 bool DidPressButtonForMap() {
   if (hud_cur_item_x != 0)
-    return filtered_joypad_H & 0x20;  // select
+    return filtered_joypad_H & 0x20; // select
   else
-    return filtered_joypad_L & 0x40;  // x
+    return filtered_joypad_L & 0x40; // x
 }
 
-void WorldMap_PlayerControl() {  // 8abae6
+void WorldMap_PlayerControl() { // 8abae6
   if (overworld_map_flags & 0x80) {
     overworld_map_flags &= ~0x80;
     OverworldMap_SetupHdma();
@@ -1200,7 +1319,7 @@ void WorldMap_PlayerControl() {  // 8abae6
   WorldMap_HandleSprites();
 }
 
-void WorldMap_RestoreGraphics() {  // 8abbd6
+void WorldMap_RestoreGraphics() { // 8abbd6
   if (--INIDISP_copy)
     return;
   EnableForceBlank();
@@ -1216,14 +1335,14 @@ void WorldMap_RestoreGraphics() {  // 8abbd6
   Attract_SetUpConclusionHDMA();
 }
 
-void Attract_SetUpConclusionHDMA() {  // 8abc33
+void Attract_SetUpConclusionHDMA() { // 8abc33
   HdmaSetup(0xABDDD, 0xABDDD, 0x42, (uint8)M7A, (uint8)M7D, 0);
   HDMAEN_copy = 0x80;
   BGMODE_copy = 9;
   nmi_disable_core_updates = 0;
 }
 
-void WorldMap_ExitMap() {  // 8abc54
+void WorldMap_ExitMap() { // 8abc54
   overworld_palette_aux_or_main = 0;
   hud_palette = 0;
   InitializeTilesets();
@@ -1240,7 +1359,7 @@ void WorldMap_ExitMap() {  // 8abc54
   music_control = 0xf3;
 }
 
-void WorldMap_SetUpHDMA() {  // 8abc96
+void WorldMap_SetUpHDMA() { // 8abc96
   BG1HOFS_copy2 = 0x80;
   BG1VOFS_copy2 = 0xc8;
   M7Y_copy = 0x1c9;
@@ -1275,13 +1394,13 @@ void WorldMap_SetUpHDMA() {  // 8abc96
   }
 }
 
-void WorldMap_FillTilemapWithEF() {  // 8abda5
+void WorldMap_FillTilemapWithEF() { // 8abda5
   uint16 *dst = g_zenv.vram;
   for (int i = 0; i != 0x4000; i++)
     BYTE(dst[i]) = 0xef;
 }
 
-void WorldMap_HandleSprites() {  // 8abf66
+void WorldMap_HandleSprites() { // 8abf66
   Point16U pt;
 
   if (frame_counter & 0x10 && WorldMap_CalculateOamCoordinates(&pt))
@@ -1291,21 +1410,26 @@ void WorldMap_HandleSprites() {  // 8abf66
   uint16 xbak = link_x_coord_spexit;
 
   int k = 15;
-  if (BYTE(overworld_screen_index) < 0x40 && (bird_travel_x_lo[k] | bird_travel_x_hi[k] | bird_travel_y_lo[k] | bird_travel_y_hi[k])) {
+  if (BYTE(overworld_screen_index) < 0x40 &&
+      (bird_travel_x_lo[k] | bird_travel_x_hi[k] | bird_travel_y_lo[k] |
+       bird_travel_y_hi[k])) {
     if (!frame_counter)
       birdtravel_var1[k]++;
     link_x_coord_spexit = bird_travel_x_hi[k] << 8 | bird_travel_x_lo[k];
     link_y_coord_spexit = bird_travel_y_hi[k] << 8 | bird_travel_y_lo[k];
     if (WorldMap_CalculateOamCoordinates(&pt))
-      WorldMap_AddSprite(15, 2, kOverworldMap_Table4[frame_counter >> 1 & 3], 0x6a, pt.x, pt.y);
+      WorldMap_AddSprite(15, 2, kOverworldMap_Table4[frame_counter >> 1 & 3],
+                         0x6a, pt.x, pt.y);
   }
 
-  if (save_ow_event_info[0x5b] & 0x20 || (((savegame_map_icons_indicator >= 6) ^ is_in_dark_world) & 1))
+  if (save_ow_event_info[0x5b] & 0x20 ||
+      (((savegame_map_icons_indicator >= 6) ^ is_in_dark_world) & 1))
     goto out;
 
   k = savegame_map_icons_indicator;
 
-  if (!OverworldMap_CheckForPendant(0) && !OverworldMap_CheckForCrystal(0) && !sign16(kOwMapCrystal0_x[k])) {
+  if (!OverworldMap_CheckForPendant(0) && !OverworldMap_CheckForCrystal(0) &&
+      !sign16(kOwMapCrystal0_x[k])) {
     link_x_coord_spexit = kOwMapCrystal0_x[k];
     link_y_coord_spexit = kOwMapCrystal0_y[k];
     uint8 t = kOwMapCrystal0_tab[k] >> 8;
@@ -1324,7 +1448,8 @@ void WorldMap_HandleSprites() {  // 8abf66
   endif_crystal0:;
   }
 
-  if (!OverworldMap_CheckForPendant(1) && !OverworldMap_CheckForCrystal(1) && !sign16(kOwMapCrystal1_x[k])) {
+  if (!OverworldMap_CheckForPendant(1) && !OverworldMap_CheckForCrystal(1) &&
+      !sign16(kOwMapCrystal1_x[k])) {
     link_x_coord_spexit = kOwMapCrystal1_x[k];
     link_y_coord_spexit = kOwMapCrystal1_y[k];
     uint8 t = kOwMapCrystal1_tab[k] >> 8;
@@ -1343,7 +1468,8 @@ void WorldMap_HandleSprites() {  // 8abf66
   endif_crystal1:;
   }
 
-  if (!OverworldMap_CheckForPendant(2) && !OverworldMap_CheckForCrystal(2) && !sign16(kOwMapCrystal2_x[k])) {
+  if (!OverworldMap_CheckForPendant(2) && !OverworldMap_CheckForCrystal(2) &&
+      !sign16(kOwMapCrystal2_x[k])) {
     link_x_coord_spexit = kOwMapCrystal2_x[k];
     link_y_coord_spexit = kOwMapCrystal2_y[k];
     uint8 t = kOwMapCrystal2_tab[k] >> 8;
@@ -1443,16 +1569,18 @@ out:
   link_y_coord_spexit = ybak;
 }
 
-static bool WorldMap_CalculateOamCoordinates(Point16U *pt) {  // 8ac39f
+static bool WorldMap_CalculateOamCoordinates(Point16U *pt) { // 8ac39f
   if (overworld_map_flags == 0) {
-    int j = -(link_y_coord_spexit >> 4) + M7Y_copy + (link_y_coord_spexit >> 3 & 1) - 0xc0;
+    int j = -(link_y_coord_spexit >> 4) + M7Y_copy +
+            (link_y_coord_spexit >> 3 & 1) - 0xc0;
     uint8 t0 = kOverworldMap_tab1[j];
     uint8 yval = 13 * t0 >> 4;
 
     uint8 at = link_x_coord_spexit >> 4;
     bool below = at < 0x80;
     at -= 0x80;
-    if (sign8(at)) at = ~at;
+    if (sign8(at))
+      at = ~at;
 
     uint8 t1 = ((yval < 224 ? yval : 0) * 0x54 >> 8) + 0xb2;
     uint8 t2 = at * t1 >> 8;
@@ -1475,8 +1603,8 @@ static bool WorldMap_CalculateOamCoordinates(Point16U *pt) {  // 8ac39f
     if (sign16(t2))
       t2 = -t2;
     uint8 t3 = yval < 226 ? yval : 0;
-    uint8 t4 = (t3 * 84 >> 8) + 178;  // r0
-    uint8 t5 = (uint8)t2 * t4 >> 8; // r1
+    uint8 t4 = (t3 * 84 >> 8) + 178; // r0
+    uint8 t5 = (uint8)t2 * t4 >> 8;  // r1
     uint16 t6 = (uint8)(t2 >> 8) * t4 + t5;
     uint16 t7 = (below) ? 0x800 - t6 : t6 + 0x800;
     bool below2 = t7 < 0x800;
@@ -1495,7 +1623,8 @@ static bool WorldMap_CalculateOamCoordinates(Point16U *pt) {  // 8ac39f
   }
 }
 
-static void WorldMap_AddSprite(int spr, uint8 big, uint8 flags, uint8 ch, uint16 x, uint16 y) {  // 8ac51c
+static void WorldMap_AddSprite(int spr, uint8 big, uint8 flags, uint8 ch,
+                               uint16 x, uint16 y) { // 8ac51c
   if (!(frame_counter & 0x10) && ch == 100) {
     assert(spr >= 8);
     ch = kOverworldMapData[spr - 8];
@@ -1510,23 +1639,25 @@ static void WorldMap_AddSprite(int spr, uint8 big, uint8 flags, uint8 ch, uint16
   SetOamPlain(&oam_buf[spr], x, y, ch, flags, big);
 }
 
-bool OverworldMap_CheckForPendant(int k) {  // 8ac5a9
-  return (savegame_map_icons_indicator == 3) && (link_which_pendants & kPendantBitMask[k]) != 0;
+bool OverworldMap_CheckForPendant(int k) { // 8ac5a9
+  return (savegame_map_icons_indicator == 3) &&
+         (link_which_pendants & kPendantBitMask[k]) != 0;
 }
 
-bool OverworldMap_CheckForCrystal(int k) {  // 8ac5c6
-  return (savegame_map_icons_indicator == 7) && (link_has_crystals & kCrystalBitMask[k]) != 0;
+bool OverworldMap_CheckForCrystal(int k) { // 8ac5c6
+  return (savegame_map_icons_indicator == 7) &&
+         (link_has_crystals & kCrystalBitMask[k]) != 0;
 }
 
-void Module0E_03_DungeonMap() {  // 8ae0b0
+void Module0E_03_DungeonMap() { // 8ae0b0
   kDungMapSubmodules[overworld_map_state]();
 }
 
-void Module0E_03_01_DrawMap() {  // 8ae0dc
+void Module0E_03_01_DrawMap() { // 8ae0dc
   kDungMapInit[dungmap_init_state]();
 }
 
-void Module0E_03_01_00_PrepMapGraphics() {  // 8ae0e4
+void Module0E_03_01_00_PrepMapGraphics() { // 8ae0e4
   uint8 hdmaen_bak = HDMAEN_copy;
   HDMAEN_copy = 0;
   mapbak_main_tile_theme_index = main_tile_theme_index;
@@ -1554,24 +1685,24 @@ void Module0E_03_01_00_PrepMapGraphics() {  // 8ae0e4
   nmi_disable_core_updates = 9;
 }
 
-void Module0E_03_01_01_DrawLEVEL() {  // 8ae1a4
+void Module0E_03_01_01_DrawLEVEL() { // 8ae1a4
   // Display FLOOR instead of MAP
   int i = kDungMap_Tab0[cur_palace_index_x2 >> 1] >> 1;
   if (i >= 0) {
     uint8 *dst = (uint8 *)&vram_upload_data[0];
     dst[32] = 0xff;
-    WORD(dst[14   ]) = kDungMap_Tab1[i];
-    WORD(dst[14+16]) = kDungMap_Tab2[i];
+    WORD(dst[14]) = kDungMap_Tab1[i];
+    WORD(dst[14 + 16]) = kDungMap_Tab2[i];
     for (int i = 13; i >= 0; i--) {
       dst[i] = kDungMap_Tab3[i];
-      dst[i+16] = kDungMap_Tab4[i];
+      dst[i + 16] = kDungMap_Tab4[i];
     }
     nmi_load_bg_from_vram = 1;
   }
   dungmap_init_state++;
 }
 
-void Module0E_03_01_02_DrawFloorsBackdrop() {  // 8ae1f3
+void Module0E_03_01_02_DrawFloorsBackdrop() { // 8ae1f3
   int offs = 0;
   uint16 t5 = kDungMap_Tab5[cur_palace_index_x2 >> 1];
   if (t5 & 0x100) {
@@ -1584,7 +1715,10 @@ void Module0E_03_01_02_DrawFloorsBackdrop() {  // 8ae1f3
       vram_upload_data[offs + 2] = 0x1B2E;
     }
   }
-  int t7 = kDungMap_Tab7[(uint8)t5 >= 0x50 ? (((uint8)t5 >> 4) - 4) : (t5 & 0xf) >= 5 ? (t5 & 0xf) : 0], t7_org = t7;
+  int t7 = kDungMap_Tab7[(uint8)t5 >= 0x50 ? (((uint8)t5 >> 4) - 4)
+                         : (t5 & 0xf) >= 5 ? (t5 & 0xf)
+                                           : 0],
+      t7_org = t7;
   int j = 0;
   do {
     vram_upload_data[offs++] = swap16(t7);
@@ -1599,7 +1733,7 @@ void Module0E_03_01_02_DrawFloorsBackdrop() {  // 8ae1f3
   nmi_load_bg_from_vram = 1;
 }
 
-void DungeonMap_BuildFloorListBoxes(uint8 t5, uint16 r14) {  // 8ae2f5
+void DungeonMap_BuildFloorListBoxes(uint8 t5, uint16 r14) { // 8ae2f5
   int n = (t5 & 0xf) + (t5 >> 4);
   r14 -= 0x40 - 2;
   r14 += (t5 & 0xf) * 0x40;
@@ -1607,7 +1741,7 @@ void DungeonMap_BuildFloorListBoxes(uint8 t5, uint16 r14) {  // 8ae2f5
   int i = 0;
   do {
     int x = 0;
-loop2:
+  loop2:
     vram_upload_data[offs++] = swap16(r14);
     vram_upload_data[offs++] = 0x700;
     do {
@@ -1623,7 +1757,7 @@ loop2:
   vram_upload_offset = offs * 2;
 }
 
-void Module0E_03_01_03_DrawRooms() {  // 8ae384
+void Module0E_03_01_03_DrawRooms() { // 8ae384
   dungmap_var2 = 0;
   dungmap_idx = 0;
   uint8 t = -(kDungMap_Tab5[cur_palace_index_x2 >> 1] & 0xf);
@@ -1648,42 +1782,47 @@ void Module0E_03_01_03_DrawRooms() {  // 8ae384
   dungmap_init_state++;
 }
 
-void DungeonMap_DrawBorderForRooms(uint16 pd, uint16 mask) {  // 8ae449
+void DungeonMap_DrawBorderForRooms(uint16 pd, uint16 mask) { // 8ae449
   for (int i = 0; i != 4; i++)
-    messaging_buf[((kDungMap_Tab10[i] + pd) & 0xfff) >> 1] = kDungMap_Tab11[i] & mask;
+    messaging_buf[((kDungMap_Tab10[i] + pd) & 0xfff) >> 1] =
+        kDungMap_Tab11[i] & mask;
   for (int i = 0; i != 2; i++) {
     int r4 = kDungMap_Tab12[i] + pd;
-    for (int j = 0; j != 20; j+=2)
+    for (int j = 0; j != 20; j += 2)
       messaging_buf[((r4 + j) & 0xfff) >> 1] = kDungMap_Tab13[i] & mask;
   }
 
   for (int i = 0; i != 2; i++) {
     int r4 = kDungMap_Tab14[i] + pd;
-    for (int j = 0; j != 0x280; j+=0x40)
+    for (int j = 0; j != 0x280; j += 0x40)
       messaging_buf[((r4 + j) & 0xfff) >> 1] = kDungMap_Tab15[i] & mask;
   }
 }
 
-void DungeonMap_DrawFloorNumbersByRoom(uint16 pd, uint16 r8) {  // 8ae4f9
+void DungeonMap_DrawFloorNumbersByRoom(uint16 pd, uint16 r8) { // 8ae4f9
   uint16 p = 0xDE;
   do {
     int t = ((p + pd) & 0xfff) >> 1;
     messaging_buf[t] = 0xf00;
-    messaging_buf[t+1] = 0xf00;
+    messaging_buf[t + 1] = 0xf00;
   } while (p += 0x40, p != 0x39e);
   int t = ((0x35e + pd) & 0xfff) >> 1;
-  uint16 q1 = (dungmap_cur_floor & 0x80) ? 0x1F1C : kDungMap_Tab16[dungmap_cur_floor & 0xf];
-  uint16 q2 = (dungmap_cur_floor & 0x80) ? kDungMap_Tab16[(uint8)~dungmap_cur_floor] : 0x1F1D;
-  messaging_buf[t+0] = q1 & r8;
-  messaging_buf[t+1] = q2 & r8;
+  uint16 q1 = (dungmap_cur_floor & 0x80)
+                  ? 0x1F1C
+                  : kDungMap_Tab16[dungmap_cur_floor & 0xf];
+  uint16 q2 = (dungmap_cur_floor & 0x80)
+                  ? kDungMap_Tab16[(uint8)~dungmap_cur_floor]
+                  : 0x1F1D;
+  messaging_buf[t + 0] = q1 & r8;
+  messaging_buf[t + 1] = q2 & r8;
 }
 
-void DungeonMap_DrawDungeonLayout(int pd) {  // 8ae579
+void DungeonMap_DrawDungeonLayout(int pd) { // 8ae579
   for (int i = 0; i < 5; i++)
     DungeonMap_DrawSingleRowOfRooms(i, ((292 + 128 * i + pd) & 0xfff) >> 1);
 }
 
-void DungeonMap_DrawSingleRowOfRooms(int i, int arg_x) {  // 8ae5bc
+void DungeonMap_DrawSingleRowOfRooms(int i, int arg_x) { // 8ae5bc
   uint16 t5 = kDungMap_Tab5[cur_palace_index_x2 >> 1];
   int dungmask = kUpperBitmasks[cur_palace_index_x2 >> 1];
 
@@ -1697,7 +1836,7 @@ void DungeonMap_DrawSingleRowOfRooms(int i, int arg_x) {  // 8ae5bc
     } else {
       r14 = save_dung_info[v] & 0xf;
       int k = 0, count = 0;
-      for(; curp[k] != v; k++)
+      for (; curp[k] != v; k++)
         count += (curp[k] != 0xf);
       yv = GetOtherDungmapInfo(count);
     }
@@ -1772,7 +1911,7 @@ void DungeonMap_DrawSingleRowOfRooms(int i, int arg_x) {  // 8ae5bc
   }
 }
 
-void DungeonMap_DrawRoomMarkers() {  // 8ae823
+void DungeonMap_DrawRoomMarkers() { // 8ae823
   int dung = cur_palace_index_x2 >> 1;
   uint8 t5 = (kDungMap_Tab5[dung] & 0xf);
   uint8 floor1 = t5 + dung_cur_floor;
@@ -1787,7 +1926,7 @@ void DungeonMap_DrawRoomMarkers() {  // 8ae823
   int i;
 
   uint8 xcoord = 0, ycoord = 0;
-  for(i = 0; i < 25 && *curp++ != (uint8)room; i++) {
+  for (i = 0; i < 25 && *curp++ != (uint8)room; i++) {
     if (xcoord < 64)
       xcoord += 16;
     else
@@ -1824,19 +1963,19 @@ void DungeonMap_DrawRoomMarkers() {  // 8ae823
   dungmap_init_state = 0;
 }
 
-void DungeonMap_HandleInputAndSprites() {  // 8ae954
+void DungeonMap_HandleInputAndSprites() { // 8ae954
   DungeonMap_HandleInput();
   DungeonMap_DrawSprites();
 }
 
 static inline bool WantExitDungeonMap() {
   if (hud_cur_item_x != 0)
-    return filtered_joypad_H & 0x20;  // Select
+    return filtered_joypad_H & 0x20; // Select
   else
-    return filtered_joypad_L & 0x40;  // X
+    return filtered_joypad_L & 0x40; // X
 }
 
-void DungeonMap_HandleInput() {  // 8ae95b
+void DungeonMap_HandleInput() { // 8ae95b
   if (WantExitDungeonMap()) {
     overworld_map_state += 2;
     dungmap_init_state = 0;
@@ -1845,13 +1984,13 @@ void DungeonMap_HandleInput() {  // 8ae95b
   }
 }
 
-void DungeonMap_HandleMovementInput() {  // 8ae979
+void DungeonMap_HandleMovementInput() { // 8ae979
   DungeonMap_HandleFloorSelect();
   if (dungmap_var2)
     DungeonMap_ScrollFloors();
 }
 
-void DungeonMap_HandleFloorSelect() {  // 8ae986
+void DungeonMap_HandleFloorSelect() { // 8ae986
   uint8 r2 = (kDungMap_Tab5[cur_palace_index_x2 >> 1] >> 4 & 0xf);
   uint8 r3 = (kDungMap_Tab5[cur_palace_index_x2 >> 1] & 0xf);
   if (r2 + r3 < 3 || dungmap_var2 || !(joypad1H_last & 0xc))
@@ -1884,7 +2023,7 @@ void DungeonMap_HandleFloorSelect() {  // 8ae986
   nmi_subroutine_index = 8;
 }
 
-void DungeonMap_ScrollFloors() {  // 8aea7f
+void DungeonMap_ScrollFloors() { // 8aea7f
   int x = WORD(g_ram[10]) >> 3 & 1;
   dungmap_var5 += kDungMap_Tab39[x];
   dungmap_var8 += kDungMap_Tab39[x];
@@ -1893,7 +2032,7 @@ void DungeonMap_ScrollFloors() {  // 8aea7f
     dungmap_var2 = 0;
 }
 
-void DungeonMap_DrawSprites() {  // 8aeab2
+void DungeonMap_DrawSprites() { // 8aeab2
   int dung = cur_palace_index_x2 >> 1;
   uint8 r2 = (kDungMap_Tab5[dung] & 0xf);
   uint8 floor = r2 + dung_cur_floor;
@@ -1911,7 +2050,7 @@ void DungeonMap_DrawSprites() {  // 8aeab2
   DungeonMap_DrawFloorBlinker();
 }
 
-void DungeonMap_DrawLinkPointing(int spr_pos, uint8 r2, uint8 r3) {  // 8aeaf0
+void DungeonMap_DrawLinkPointing(int spr_pos, uint8 r2, uint8 r3) { // 8aeaf0
   int dung = cur_palace_index_x2 >> 1;
   uint8 t5 = kDungMap_Tab5[dung];
   if (4 - r2 >= 0) {
@@ -1920,28 +2059,31 @@ void DungeonMap_DrawLinkPointing(int spr_pos, uint8 r2, uint8 r3) {  // 8aeaf0
     if (a >= 0)
       r3 -= a;
   }
-  SetOamPlain(&oam_buf[spr_pos], 0x19, kDungMap_Tab33[r3] - 4, 0, palette_swap_flag ? 0x30 : 0x3e, 2);
+  SetOamPlain(&oam_buf[spr_pos], 0x19, kDungMap_Tab33[r3] - 4, 0,
+              palette_swap_flag ? 0x30 : 0x3e, 2);
 }
 
-int DungeonMap_DrawBlinkingIndicator(int spr_pos) {  // 8aeb50
-  SetOamPlain(&oam_buf[spr_pos], dungmap_var3 - 3, ((dungmap_var5 < 256) ? dungmap_var5 : 0xf0) - 3, 0x34, kDungMap_Tab38[frame_counter >> 2 & 3], 0);
+int DungeonMap_DrawBlinkingIndicator(int spr_pos) { // 8aeb50
+  SetOamPlain(&oam_buf[spr_pos], dungmap_var3 - 3,
+              ((dungmap_var5 < 256) ? dungmap_var5 : 0xf0) - 3, 0x34,
+              kDungMap_Tab38[frame_counter >> 2 & 3], 0);
   return spr_pos + 1;
 }
 
-int DungeonMap_DrawLocationMarker(int spr_pos, uint16 r14) {  // 8aeba8
+int DungeonMap_DrawLocationMarker(int spr_pos, uint16 r14) { // 8aeba8
   for (int i = 3; i >= 0; i--, spr_pos++) {
     uint8 r15 = dungmap_var6 + kDungMap_Tab24[r14];
     int fr = (frame_counter >> 2) & 1;
     if ((dungmap_var5 + 1 & 0xf0) == r15 + 1 && dungmap_var5 < 256)
       fr += 2;
     SetOamPlain(&oam_buf[spr_pos], kDungMap_Tab29[i] + (dungmap_var3 & 0xf0),
-                r15 + kDungMap_Tab30[i],
-                0, kDungMap_Tab32[fr] | kDungMap_Tab31[i], 2);
+                r15 + kDungMap_Tab30[i], 0,
+                kDungMap_Tab32[fr] | kDungMap_Tab31[i], 2);
   }
   return spr_pos;
 }
 
-int DungeonMap_DrawFloorNumberObjects(int spr_pos) {  // 8aec0a
+int DungeonMap_DrawFloorNumberObjects(int spr_pos) { // 8aec0a
   uint8 r2 = (kDungMap_Tab5[cur_palace_index_x2 >> 1] >> 4 & 0xf);
   uint8 r3 = (kDungMap_Tab5[cur_palace_index_x2 >> 1] & 0xf);
   uint8 yv = 7;
@@ -1959,14 +2101,16 @@ int DungeonMap_DrawFloorNumberObjects(int spr_pos) {  // 8aec0a
   r2--;
   r3 = -r3;
   do {
-    SetOamPlain(&oam_buf[spr_pos + 0], 0x30, r4, sign8(r2) ? 0x1c : kDungMap_Tab34[r2], 0x3d, 0);
-    SetOamPlain(&oam_buf[spr_pos + 1], 0x38, r4, sign8(r2) ? kDungMap_Tab34[r2 ^ 0xff] : 0x1d, 0x3d, 0);
+    SetOamPlain(&oam_buf[spr_pos + 0], 0x30, r4,
+                sign8(r2) ? 0x1c : kDungMap_Tab34[r2], 0x3d, 0);
+    SetOamPlain(&oam_buf[spr_pos + 1], 0x38, r4,
+                sign8(r2) ? kDungMap_Tab34[r2 ^ 0xff] : 0x1d, 0x3d, 0);
     r4 += 16;
   } while (spr_pos += 2, r2-- != r3);
   return spr_pos;
 }
 
-void DungeonMap_DrawFloorBlinker() {  // 8aeccf
+void DungeonMap_DrawFloorBlinker() { // 8aeccf
   uint8 floor = dungmap_cur_floor;
   uint8 t5 = kDungMap_Tab5[cur_palace_index_x2 >> 1];
   uint8 flag = ((t5 >> 4 & 0xf) + (t5 & 0xf) != 1);
@@ -1992,26 +2136,30 @@ void DungeonMap_DrawFloorBlinker() {  // 8aeccf
     int spr_pos = 0x40 + kDungMap_Tab35[flag];
     for (int i = 3; i >= 0; i--, spr_pos++) {
       uint8 t = 0x3d | (i ? 0 : 0x40);
-      SetOamPlain(&oam_buf[spr_pos + 0], x, y + flag * 16 + 0, kDungMap_Tab36[i], t, 0);
-      SetOamPlain(&oam_buf[spr_pos + 4], x, y + flag * 16 + 8, kDungMap_Tab36[i], t | 0x80, 0);
+      SetOamPlain(&oam_buf[spr_pos + 0], x, y + flag * 16 + 0,
+                  kDungMap_Tab36[i], t, 0);
+      SetOamPlain(&oam_buf[spr_pos + 4], x, y + flag * 16 + 8,
+                  kDungMap_Tab36[i], t | 0x80, 0);
       x += 8;
     }
   } while (flag--);
 }
 
-int DungeonMap_DrawBossIcon(int spr_pos) {  // 8aede4
+int DungeonMap_DrawBossIcon(int spr_pos) { // 8aede4
   int dung = cur_palace_index_x2 >> 1;
-  if (save_dung_info[kDungMap_Tab25[dung]] & 0x800 || !(link_compass & kUpperBitmasks[dung]) || kDungMap_Tab28[dung] < 0)
+  if (save_dung_info[kDungMap_Tab25[dung]] & 0x800 ||
+      !(link_compass & kUpperBitmasks[dung]) || kDungMap_Tab28[dung] < 0)
     return spr_pos;
   spr_pos = DungeonMap_DrawBossIconByFloor(spr_pos);
   if ((frame_counter & 0xf) >= 10)
     return spr_pos;
   uint16 xy = kDungMap_Tab37[dung];
-  SetOamPlain(&oam_buf[spr_pos], (xy >> 8) + dungmap_var7 + 0x90, (dungmap_var8 < 256) ? xy + dungmap_var8 : 0xf0, 0x31, 0x33, 0);
+  SetOamPlain(&oam_buf[spr_pos], (xy >> 8) + dungmap_var7 + 0x90,
+              (dungmap_var8 < 256) ? xy + dungmap_var8 : 0xf0, 0x31, 0x33, 0);
   return spr_pos + 1;
 }
 
-int DungeonMap_DrawBossIconByFloor(int spr_pos) {  // 8aee95
+int DungeonMap_DrawBossIconByFloor(int spr_pos) { // 8aee95
   int dung = cur_palace_index_x2 >> 1;
   uint8 t5 = kDungMap_Tab5[dung];
   uint8 r2 = t5 & 0xf;
@@ -2028,7 +2176,7 @@ int DungeonMap_DrawBossIconByFloor(int spr_pos) {  // 8aee95
   return spr_pos + 1;
 }
 
-void DungeonMap_RecoverGFX() {  // 8aef19
+void DungeonMap_RecoverGFX() { // 8aef19
   uint8 hdmaen_bak = HDMAEN_copy;
   HDMAEN_copy = 0;
   EraseTileMaps_normal();
@@ -2070,12 +2218,12 @@ void DungeonMap_RecoverGFX() {  // 8aef19
   nmi_disable_core_updates = 0;
 }
 
-void ToggleStarTilesAndAdvance() {  // 8aefc9
+void ToggleStarTilesAndAdvance() { // 8aefc9
   Dungeon_RestoreStarTileChr();
   overworld_map_state++;
 }
 
-void Death_InitializeGameOverLetters() {  // 8afe20
+void Death_InitializeGameOverLetters() { // 8afe20
   flag_for_boomerang_in_place = 0;
   for (int i = 0; i < 8; i++) {
     ancilla_x_lo[i] = 0xb0;
@@ -2085,7 +2233,7 @@ void Death_InitializeGameOverLetters() {  // 8afe20
   hookshot_effect_index = 6;
 }
 
-void CopySaveToWRAM() {  // 8ccfbb
+void CopySaveToWRAM() { // 8ccfbb
   int k = 0xf;
   bird_travel_x_hi[k] = 0;
   bird_travel_y_hi[k] = 0;
@@ -2118,11 +2266,11 @@ void CopySaveToWRAM() {  // 8ccfbb
   hud_palette = 0;
 }
 
-void RenderText() {  // 8ec440
+void RenderText() { // 8ec440
   kMessaging_Text[messaging_module]();
 }
 
-void RenderText_PostDeathSaveOptions() {  // 8ec455
+void RenderText_PostDeathSaveOptions() { // 8ec455
   dialogue_message_index = 3;
   Text_Initialize_initModuleStateLoop();
   text_msgbox_topleft = 0x61e8;
@@ -2131,14 +2279,14 @@ void RenderText_PostDeathSaveOptions() {  // 8ec455
     Text_Render();
 }
 
-void Text_Initialize() {  // 8ec483
+void Text_Initialize() { // 8ec483
   if (main_module_index == 20)
     ResetHUDPalettes4and5();
   Attract_DecompressStoryGFX();
   Text_Initialize_initModuleStateLoop();
 }
 
-void Text_Initialize_initModuleStateLoop() {  // 8ec493
+void Text_Initialize_initModuleStateLoop() { // 8ec493
   memcpy(&text_msgbox_topleft_copy, kText_InitializationData, 32);
   Text_InitVwfState();
   RenderText_SetDefaultWindowPosition();
@@ -2149,7 +2297,7 @@ void Text_Initialize_initModuleStateLoop() {  // 8ec493
   nmi_disable_core_updates = 2;
 }
 
-void Text_InitVwfState() {  // 8ec4c9
+void Text_InitVwfState() { // 8ec4c9
   vwf_curline = 0;
   vwf_flag_next_line = 0;
   vwf_var1 = 0;
@@ -2164,7 +2312,7 @@ enum {
   kTextCmd_Choose = 1,
   kTextCmd_Item = 2,
   kTextCmd_Name = 3,
-  kTextCmd_Window = 4,  // Only used with 2
+  kTextCmd_Window = 4, // Only used with 2
   kTextCmd_Number = 5,
   kTextCmd_Position = 6,
   kTextCmd_ScrollSpd = 7,
@@ -2179,9 +2327,9 @@ enum {
   kTextCmd_Wait = 17,
   kTextCmd_Sound = 18,
   kTextCmd_Speed = 19,
-  kTextCmd_Mark = 20,     // Unused
-  kTextCmd_Mark2 = 21,    // Unused
-  kTextCmd_Clear = 22,    // Unused
+  kTextCmd_Mark = 20,  // Unused
+  kTextCmd_Mark2 = 21, // Unused
+  kTextCmd_Clear = 22, // Unused
   kTextCmd_Waitkey = 23,
   kTextCmd_EndMessage = 24,
 
@@ -2195,7 +2343,7 @@ enum {
   kTextCmd_EU_2 = 0x83,       // frequency 496
   kTextCmd_EU_3 = 0x84,       // frequency 347
   kTextCmd_EU_Name = 0x85,    // frequency 64
-  kTextCmd_EU_Rest = 0x87,    
+  kTextCmd_EU_Rest = 0x87,
 };
 
 #define TEXTCMD_MULTIBYTE(a) ((a) & 1)
@@ -2209,9 +2357,12 @@ uint32 Text_DecodeCmd(uint8 a, const uint8 *src) {
     if (a < kTextCommandStart_US)
       return TEXTCMD_MK(a, kTextCmd_IsLetter, 0);
     if (a >= 0x80)
-      return TEXTCMD_MK(26, kTextCmd_IsLetter, 0); // could happen when loading snapshots
+      return TEXTCMD_MK(26, kTextCmd_IsLetter,
+                        0); // could happen when loading snapshots
     assert(a < 0x80);
-    static const uint8 kText_CommandLengths_US[] = { 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0 };
+    static const uint8 kText_CommandLengths_US[] = {0, 0, 0, 0, 1, 1, 1, 1, 0,
+                                                    0, 0, 0, 0, 0, 0, 0, 1, 1,
+                                                    1, 1, 0, 0, 0, 0, 0};
     if (kText_CommandLengths_US[a - kTextCommandStart_US])
       return TEXTCMD_MK(*src, a - kTextCommandStart_US, 1);
     else
@@ -2222,35 +2373,40 @@ uint32 Text_DecodeCmd(uint8 a, const uint8 *src) {
       return TEXTCMD_MK(a, kTextCmd_IsLetter, 0);
     static const uint8 kSoundLut[] = {45};
     static const uint8 kReturns_Simple[] = {
-      TEXTCMD_MK(0, kTextCmd_EndMessage, 0),
-      TEXTCMD_MK(0, kTextCmd_Scroll, 0),
-      TEXTCMD_MK(0, kTextCmd_Waitkey, 0),
-      TEXTCMD_MK(0, kTextCmd_1, 0),
-      TEXTCMD_MK(0, kTextCmd_2, 0),
-      TEXTCMD_MK(0, kTextCmd_3, 0),
-      TEXTCMD_MK(0, kTextCmd_Name, 0),
-      TEXTCMD_MK(0, kTextCmd_Name, 0), // Unused
+        TEXTCMD_MK(0, kTextCmd_EndMessage, 0),
+        TEXTCMD_MK(0, kTextCmd_Scroll, 0),
+        TEXTCMD_MK(0, kTextCmd_Waitkey, 0),
+        TEXTCMD_MK(0, kTextCmd_1, 0),
+        TEXTCMD_MK(0, kTextCmd_2, 0),
+        TEXTCMD_MK(0, kTextCmd_3, 0),
+        TEXTCMD_MK(0, kTextCmd_Name, 0),
+        TEXTCMD_MK(0, kTextCmd_Name, 0), // Unused
     };
     if (a < kTextCmd_EU_Rest)
       return kReturns_Simple[a - 0x7f];
     a = *src;
     switch (a >> 4) {
-    case 0: return TEXTCMD_MK(a & 0xF, kTextCmd_Wait, 1);
-    case 1: return TEXTCMD_MK(a & 0xF, kTextCmd_Color, 1);
-    case 2: return TEXTCMD_MK(a & 0xF, kTextCmd_Number, 1);
-    case 3: return TEXTCMD_MK(a & 0xF, kTextCmd_Speed, 1);
-    case 4: return TEXTCMD_MK(kSoundLut[a & 0xF], kTextCmd_Sound, 1);
+    case 0:
+      return TEXTCMD_MK(a & 0xF, kTextCmd_Wait, 1);
+    case 1:
+      return TEXTCMD_MK(a & 0xF, kTextCmd_Color, 1);
+    case 2:
+      return TEXTCMD_MK(a & 0xF, kTextCmd_Number, 1);
+    case 3:
+      return TEXTCMD_MK(a & 0xF, kTextCmd_Speed, 1);
+    case 4:
+      return TEXTCMD_MK(kSoundLut[a & 0xF], kTextCmd_Sound, 1);
     case 8: {
       static const uint8 kReturns_Ext[] = {
-        TEXTCMD_MK(0, kTextCmd_Choose, 1),
-        TEXTCMD_MK(0, kTextCmd_Choose2, 1),
-        TEXTCMD_MK(0, kTextCmd_Choose3, 1),
-        TEXTCMD_MK(0, kTextCmd_Selchg, 1),
-        TEXTCMD_MK(0, kTextCmd_Item, 1),
-        TEXTCMD_MK(0, kTextCmd_NextPic, 1),
-        TEXTCMD_MK(2, kTextCmd_Window, 1),
-        TEXTCMD_MK(0, kTextCmd_Position, 1),
-        TEXTCMD_MK(1, kTextCmd_Position, 1),
+          TEXTCMD_MK(0, kTextCmd_Choose, 1),
+          TEXTCMD_MK(0, kTextCmd_Choose2, 1),
+          TEXTCMD_MK(0, kTextCmd_Choose3, 1),
+          TEXTCMD_MK(0, kTextCmd_Selchg, 1),
+          TEXTCMD_MK(0, kTextCmd_Item, 1),
+          TEXTCMD_MK(0, kTextCmd_NextPic, 1),
+          TEXTCMD_MK(2, kTextCmd_Window, 1),
+          TEXTCMD_MK(0, kTextCmd_Position, 1),
+          TEXTCMD_MK(1, kTextCmd_Position, 1),
       };
       return kReturns_Ext[a - 0x80];
     }
@@ -2261,12 +2417,14 @@ uint32 Text_DecodeCmd(uint8 a, const uint8 *src) {
   }
 }
 
-// Perform initial parsing of the string, expanding words, processing some commands, etc.
-void Text_LoadCharacterBuffer() {  // 8ec4e2
+// Perform initial parsing of the string, expanding words, processing some
+// commands, etc.
+void Text_LoadCharacterBuffer() { // 8ec4e2
   MemBlk dictionary = FindIndexInMemblk(g_zenv.dialogue_blk, 0);
   MemBlk dialogue = FindIndexInMemblk(g_zenv.dialogue_blk, 1);
   MemBlk text_str = FindIndexInMemblk(dialogue, dialogue_message_index);
-  const uint8 *src = text_str.ptr, *src_end = src + text_str.size, *src_org = src;
+  const uint8 *src = text_str.ptr, *src_end = src + text_str.size,
+              *src_org = src;
   uint8 *dst = messaging_text_buffer;
   while (src < src_end) {
     uint8 c = *src++;
@@ -2276,15 +2434,18 @@ void Text_LoadCharacterBuffer() {  // 8ec4e2
       dst += blk.size;
       continue;
     }
-    // Decode the next byte or multibyte character (in case we support that in the future)
-    // This is dependent on the current language cause US / PAL encode commands differently
+    // Decode the next byte or multibyte character (in case we support that in
+    // the future) This is dependent on the current language cause US / PAL
+    // encode commands differently
     uint32 cmd = Text_DecodeCmd(c, src);
     switch (TEXTCMD_CMD(cmd)) {
-    case kTextCmd_Name: dst = Text_WritePlayerName(dst); break;
-    case kTextCmd_Window:  // RenderText_ExtendedCommand_SetWindowType
+    case kTextCmd_Name:
+      dst = Text_WritePlayerName(dst);
+      break;
+    case kTextCmd_Window: // RenderText_ExtendedCommand_SetWindowType
       text_render_state = TEXTCMD_PARAM(cmd);
       break;
-    case kTextCmd_Number: {  // Text_WritePreloadedNumber
+    case kTextCmd_Number: { // Text_WritePreloadedNumber
       uint8 t = TEXTCMD_PARAM(cmd);
       uint8 v = dialogue_number[t >> 1];
       *dst++ = 0x34 + ((t & 1) ? v >> 4 : v & 0xf);
@@ -2294,7 +2455,8 @@ void Text_LoadCharacterBuffer() {  // 8ec4e2
       text_msgbox_topleft = kText_Positions[TEXTCMD_PARAM(cmd)];
       break;
     case kTextCmd_Color:
-      text_tilemap_cur = ((0x387F & 0xe300) | 0x180) | (TEXTCMD_PARAM(cmd) << 10) & 0x3c00;
+      text_tilemap_cur =
+          ((0x387F & 0xe300) | 0x180) | (TEXTCMD_PARAM(cmd) << 10) & 0x3c00;
       break;
     default:
       // This combination is handled when rendering instead of here
@@ -2309,9 +2471,9 @@ void Text_LoadCharacterBuffer() {  // 8ec4e2
   dialogue_msg_read_pos = 0;
 }
 
-uint8 *Text_WritePlayerName(uint8 *p) {  // 8ec5b3
+uint8 *Text_WritePlayerName(uint8 *p) { // 8ec5b3
   uint8 slot = srm_var1;
-  int offs = ((slot>>1) - 1) * 0x500;
+  int offs = ((slot >> 1) - 1) * 0x500;
   for (int i = 0; i < 6; i++) {
     uint8 *pp = &g_zenv.sram[0x3d9 + offs + i * 2];
     uint16 a = WORD(*pp);
@@ -2323,7 +2485,7 @@ uint8 *Text_WritePlayerName(uint8 *p) {  // 8ec5b3
   return p + i;
 }
 
-uint8 Text_FilterPlayerNameCharacters(uint8 a) {  // 8ec639
+uint8 Text_FilterPlayerNameCharacters(uint8 a) { // 8ec639
   if (a >= 0x5f) {
     if (a >= 0x76)
       a -= 0x42;
@@ -2337,21 +2499,21 @@ uint8 Text_FilterPlayerNameCharacters(uint8 a) {  // 8ec639
   return a;
 }
 
-void Text_Render() {  // 8ec8d9
+void Text_Render() { // 8ec8d9
   kText_Render[text_render_state]();
 }
 
-void RenderText_Draw_Border() {  // 8ec8ea
+void RenderText_Draw_Border() { // 8ec8ea
   RenderText_DrawBorderInitialize();
   uint16 *d = RenderText_DrawBorderRow(vram_upload_data, 0);
-  for(int i = 0; i != 6; i++)
+  for (int i = 0; i != 6; i++)
     d = RenderText_DrawBorderRow(d, 6);
   d = RenderText_DrawBorderRow(d, 12);
   nmi_load_bg_from_vram = 1;
   text_render_state = 2;
 }
 
-void RenderText_Draw_BorderIncremental() {  // 8ec919
+void RenderText_Draw_BorderIncremental() { // 8ec919
   nmi_load_bg_from_vram = 1;
   uint8 a = text_incremental_state;
   uint16 *d = vram_upload_data;
@@ -2375,15 +2537,16 @@ void RenderText_Draw_BorderIncremental() {  // 8ec919
   }
 }
 
-void RenderText_Draw_CharacterTilemap() {  // 8ec97d
+void RenderText_Draw_CharacterTilemap() { // 8ec97d
   Text_BuildCharacterTilemap();
   text_render_state++;
 }
 
-void RenderText_Draw_MessageCharacters() {  // 8ec984
+void RenderText_Draw_MessageCharacters() { // 8ec984
 RESTART:;
-  uint32 cmd = Text_DecodeCmd(messaging_text_buffer[dialogue_msg_read_pos],
-      &messaging_text_buffer[dialogue_msg_read_pos + 1]);
+  uint32 cmd =
+      Text_DecodeCmd(messaging_text_buffer[dialogue_msg_read_pos],
+                     &messaging_text_buffer[dialogue_msg_read_pos + 1]);
 
   switch (TEXTCMD_CMD(cmd)) {
   case kTextCmd_IsLetter:
@@ -2396,7 +2559,7 @@ RESTART:;
     if (vwf_line_speed_cur == 0)
       goto RESTART;
     break;
-  case kTextCmd_NextPic:  // RenderText_Draw_NextImage
+  case kTextCmd_NextPic: // RenderText_Draw_NextImage
     if (main_module_index == 20) {
       PaletteFilterHistory();
       if (!BYTE(palette_filter_countdown))
@@ -2405,10 +2568,10 @@ RESTART:;
       goto COMMAND_DONE;
     }
     break;
-  case kTextCmd_Choose:  // RenderText_Draw_Choose2LowOr3
+  case kTextCmd_Choose: // RenderText_Draw_Choose2LowOr3
     RenderText_Draw_Choose2LowOr3();
     break;
-  case kTextCmd_Item:  // RenderText_Draw_ChooseItem
+  case kTextCmd_Item: // RenderText_Draw_ChooseItem
     RenderText_Draw_ChooseItem();
     break;
   case kTextCmd_Name:
@@ -2428,26 +2591,26 @@ RESTART:;
   case kTextCmd_ScrollSpd:
     dialogue_scroll_speed = TEXTCMD_PARAM(cmd);
     goto COMMAND_DONE;
-  case kTextCmd_Selchg:   // RenderText_Draw_Choose2HiOr3
+  case kTextCmd_Selchg: // RenderText_Draw_Choose2HiOr3
     RenderText_Draw_Choose2HiOr3();
     break;
-  case kTextCmd_Choose3:  // RenderText_Draw_Choose3
+  case kTextCmd_Choose3: // RenderText_Draw_Choose3
     RenderText_Draw_Choose3();
     break;
-  case kTextCmd_Choose2:  // RenderText_Draw_Choose1Or2
+  case kTextCmd_Choose2: // RenderText_Draw_Choose1Or2
     RenderText_Draw_Choose1Or2();
     break;
-  case kTextCmd_Scroll:  // RenderText_Draw_Scroll
+  case kTextCmd_Scroll: // RenderText_Draw_Scroll
     if (RenderText_Draw_Scroll())
       goto COMMAND_DONE;
     break;
-  case kTextCmd_1:  //
-  case kTextCmd_2:  //
-  case kTextCmd_3:  // VWF_SetLine
+  case kTextCmd_1: //
+  case kTextCmd_2: //
+  case kTextCmd_3: // VWF_SetLine
     vwf_curline = kVWF_RowPositions[TEXTCMD_CMD(cmd) - kTextCmd_1];
     vwf_flag_next_line = 1;
     goto COMMAND_DONE;
-  case kTextCmd_Wait:  // RenderText_Draw_Wait
+  case kTextCmd_Wait: // RenderText_Draw_Wait
     switch (joypad1L_last & 0x80 ? 1 : text_wait_countdown) {
     case 0:
       text_wait_countdown = kText_WaitDurations[TEXTCMD_PARAM(cmd)] - 1;
@@ -2460,13 +2623,13 @@ RESTART:;
       break;
     }
     break;
-  case kTextCmd_Sound:  // RenderText_Draw_PlaySfx
+  case kTextCmd_Sound: // RenderText_Draw_PlaySfx
     sound_effect_2 = TEXTCMD_PARAM(cmd);
     goto COMMAND_DONE;
-  case kTextCmd_Speed:  // RenderText_Draw_SetSpeed
+  case kTextCmd_Speed: // RenderText_Draw_SetSpeed
     vwf_line_speed = vwf_line_speed_cur = TEXTCMD_PARAM(cmd);
     goto COMMAND_DONE;
-  case kTextCmd_Waitkey:  // RenderText_Draw_PauseForInput
+  case kTextCmd_Waitkey: // RenderText_Draw_PauseForInput
     if (text_wait_countdown2 != 0) {
       if (--text_wait_countdown2 == 1)
         sound_effect_2 = 36;
@@ -2477,7 +2640,7 @@ RESTART:;
       }
     }
     break;
-  case kTextCmd_EndMessage:  // RenderText_Draw_Terminate
+  case kTextCmd_EndMessage: // RenderText_Draw_Terminate
     if (text_wait_countdown2 != 0) {
       if (--text_wait_countdown2 == 1)
         sound_effect_2 = 36;
@@ -2489,14 +2652,13 @@ RESTART:;
     }
     break;
   }
-  if (0) COMMAND_DONE: {
-    dialogue_msg_read_pos += 1 + TEXTCMD_MULTIBYTE(cmd);
-  }
-  nmi_subroutine_index = 2;
+  if (0)
+  COMMAND_DONE: { dialogue_msg_read_pos += 1 + TEXTCMD_MULTIBYTE(cmd); }
+    nmi_subroutine_index = 2;
   nmi_disable_core_updates = 2;
 }
 
-void RenderText_Draw_Finish() {  // 8eca35
+void RenderText_Draw_Finish() { // 8eca35
   RenderText_DrawBorderInitialize();
   uint16 *d = vram_upload_data;
   d[0] = swap16(text_msgbox_topleft_copy);
@@ -2509,17 +2671,17 @@ void RenderText_Draw_Finish() {  // 8eca35
   main_module_index = saved_module_for_menu;
 }
 
-void VWF_RenderSingle(int c) {  // 8ecab8
+void VWF_RenderSingle(int c) { // 8ecab8
   if (c != 0x59)
     sound_effect_2 = 12;
   vwf_line_speed_cur = vwf_line_speed;
 
   if (vwf_flag_next_line) {
-    vwf_line_ptr = kVWF_RenderCharacter_renderPos[vwf_curline>>1];
-    vwf_var1 = kVWF_RenderCharacter_linePositions[vwf_curline>>1];
+    vwf_line_ptr = kVWF_RenderCharacter_renderPos[vwf_curline >> 1];
+    vwf_var1 = kVWF_RenderCharacter_linePositions[vwf_curline >> 1];
     vwf_flag_next_line = 0;
   }
-  
+
   const uint8 *kFontData = FindIndexInMemblk(g_zenv.dialogue_font_blk, 0).ptr;
   uint8 width = FindIndexInMemblk(g_zenv.dialogue_font_blk, 1).ptr[c];
   assert(width <= 8);
@@ -2529,7 +2691,7 @@ void VWF_RenderSingle(int c) {  // 8ecab8
   vwf_arr[i + 1] = arrval + width;
   uint16 r10 = (c & 0x70) * 2 + (c & 0xf);
   uint16 r0 = arrval * 2;
-  const uint16 *src2 = (uint16*)(kFontData + r10 * 16);
+  const uint16 *src2 = (uint16 *)(kFontData + r10 * 16);
   uint8 *mbuf = (uint8 *)messaging_buf;
   for (int i = 0; i != 16; i += 2) {
     uint16 r4 = *src2++;
@@ -2547,14 +2709,14 @@ void VWF_RenderSingle(int c) {  // 8ecab8
       else
         mbuf[x + 1] &= ~kVWF_RenderCharacter_setMasks[y];
       r4 = (r4 & ~0x8080) << 1;
-      //r4 <<= 1;
+      // r4 <<= 1;
     } while (--r3 && ++y != 8);
     x += 16;
     if (r4 != 0)
       WORD(mbuf[x + 0]) = r4;
   }
   uint16 r8 = vwf_line_ptr + 0x150;
-  const uint16 *src3 = (uint16*)(kFontData + (r10 + 16) * 16);
+  const uint16 *src3 = (uint16 *)(kFontData + (r10 + 16) * 16);
   for (int i = 0; i != 16; i += 2) {
     uint16 r4 = *src3++;
     int y = r8 + r0;
@@ -2570,7 +2732,7 @@ void VWF_RenderSingle(int c) {  // 8ecab8
         mbuf[x + 1] ^= kVWF_RenderCharacter_setMasks[y];
       else
         mbuf[x + 1] &= ~kVWF_RenderCharacter_setMasks[y];
-      //r4 <<= 1;
+      // r4 <<= 1;
       r4 = (r4 & ~0x8080) << 1;
     } while (--r3 && ++y != 8);
     x += 16;
@@ -2579,7 +2741,7 @@ void VWF_RenderSingle(int c) {  // 8ecab8
   }
 }
 
-void RenderText_Draw_Choose2LowOr3() {  // 8ecd1a
+void RenderText_Draw_Choose2LowOr3() { // 8ecd1a
   if (text_wait_countdown2 != 0) {
     if (--text_wait_countdown2 == 1)
       sound_effect_2 = 36;
@@ -2598,7 +2760,7 @@ void RenderText_Draw_Choose2LowOr3() {  // 8ecd1a
   }
 }
 
-void RenderText_Draw_ChooseItem() {  // 8ecd88
+void RenderText_Draw_ChooseItem() { // 8ecd88
   if (text_wait_countdown2 != 0) {
     if (--text_wait_countdown2 == 1)
       RenderText_FindYItem_Next();
@@ -2618,7 +2780,7 @@ void RenderText_Draw_ChooseItem() {  // 8ecd88
   }
 }
 
-void RenderText_FindYItem_Previous() {  // 8ecdc8
+void RenderText_FindYItem_Previous() { // 8ecdc8
   for (;;) {
     uint8 x = choice_in_multiselect_box;
     if (sign8(x))
@@ -2630,7 +2792,7 @@ void RenderText_FindYItem_Previous() {  // 8ecdc8
   RenderText_DrawSelectedYItem();
 }
 
-void RenderText_FindYItem_Next() {  // 8ecded
+void RenderText_FindYItem_Next() { // 8ecded
   for (;;) {
     uint8 x = choice_in_multiselect_box;
     if (x >= 32)
@@ -2642,7 +2804,7 @@ void RenderText_FindYItem_Next() {  // 8ecded
   RenderText_DrawSelectedYItem();
 }
 
-void RenderText_DrawSelectedYItem() {  // 8ece14
+void RenderText_DrawSelectedYItem() { // 8ece14
   int item = choice_in_multiselect_box;
   const uint16 *p = Hud_GetItemBoxPtr(item);
   p += ((item == 3 || item == 32) ? 1 : (&link_item_bow)[item]) * 4;
@@ -2651,7 +2813,7 @@ void RenderText_DrawSelectedYItem() {  // 8ece14
   memcpy(vwf300 + 0xec, p + 2, 4);
 }
 
-void RenderText_Draw_Choose2HiOr3() {  // 8ece83
+void RenderText_Draw_Choose2HiOr3() { // 8ece83
   if (text_wait_countdown2 != 0) {
     if (--text_wait_countdown2 == 1)
       sound_effect_2 = 36;
@@ -2670,7 +2832,7 @@ void RenderText_Draw_Choose2HiOr3() {  // 8ece83
   }
 }
 
-void RenderText_Draw_Choose3() {  // 8ecef7
+void RenderText_Draw_Choose3() { // 8ecef7
   uint8 y;
   if (text_wait_countdown2 != 0) {
     if (--text_wait_countdown2 == 1)
@@ -2692,7 +2854,7 @@ void RenderText_Draw_Choose3() {  // 8ecef7
   }
 }
 
-void RenderText_Draw_Choose1Or2() {  // 8ecf72
+void RenderText_Draw_Choose1Or2() { // 8ecf72
   uint8 y;
   if (text_wait_countdown2 != 0) {
     if (--text_wait_countdown2 == 1)
@@ -2712,7 +2874,7 @@ void RenderText_Draw_Choose1Or2() {  // 8ecf72
   }
 }
 
-bool RenderText_Draw_Scroll() {  // 8ecfe2
+bool RenderText_Draw_Scroll() { // 8ecfe2
   uint8 r2 = dialogue_scroll_speed;
   do {
     for (int i = 0; i < 0x7e0; i += 16) {
@@ -2739,37 +2901,37 @@ bool RenderText_Draw_Scroll() {  // 8ecfe2
   return false;
 }
 
-void RenderText_SetDefaultWindowPosition() {  // 8ed280
+void RenderText_SetDefaultWindowPosition() { // 8ed280
   uint16 y = link_y_coord - BG2VOFS_copy2;
   int flag = (y < 0x78);
   text_msgbox_topleft = kText_Positions[flag];
 }
 
-void RenderText_DrawBorderInitialize() {  // 8ed29c
+void RenderText_DrawBorderInitialize() { // 8ed29c
   text_msgbox_topleft_copy = text_msgbox_topleft;
 }
 
-uint16 *RenderText_DrawBorderRow(uint16 *d, int y) {  // 8ed2ab
+uint16 *RenderText_DrawBorderRow(uint16 *d, int y) { // 8ed2ab
   y >>= 1;
   *d++ = swap16(text_msgbox_topleft_copy);
   text_msgbox_topleft_copy += 0x20;
   *d++ = 0x2F00;
   *d++ = kText_BorderTiles[y];
-  for(int i = 0; i < 22; i++)
-    *d++ = kText_BorderTiles[y+1];
-  *d++ = kText_BorderTiles[y+2];
+  for (int i = 0; i < 22; i++)
+    *d++ = kText_BorderTiles[y + 1];
+  *d++ = kText_BorderTiles[y + 2];
   *d = 0xffff;
   return d;
 }
 
-void Text_BuildCharacterTilemap() {  // 8ed2ec
+void Text_BuildCharacterTilemap() { // 8ed2ec
   uint16 *vwf300 = (uint16 *)&g_ram[0x1300];
   for (int i = 0; i < 126; i++)
     vwf300[i] = text_tilemap_cur++;
   RenderText_Refresh();
 }
 
-void RenderText_Refresh() {  // 8ed307
+void RenderText_Refresh() { // 8ed307
   RenderText_DrawBorderInitialize();
   text_msgbox_topleft_copy += 0x21;
   uint16 *d = vram_upload_data;
@@ -2785,8 +2947,7 @@ void RenderText_Refresh() {  // 8ed307
   nmi_load_bg_from_vram = 1;
 }
 
-
-void Text_GenerateMessagePointers() {  // 8ed3eb
+void Text_GenerateMessagePointers() { // 8ed3eb
   // This is not actually used. Only for ram compat.
   MemBlk dialogue = FindIndexInMemblk(g_zenv.dialogue_blk, 1);
   uint32 p = 0x1c8000;
@@ -2801,12 +2962,12 @@ void Text_GenerateMessagePointers() {  // 8ed3eb
   }
 }
 
-void DungMap_LightenUpMap() {  // 8ed940
+void DungMap_LightenUpMap() { // 8ed940
   if (++INIDISP_copy == 0xf)
     overworld_map_state++;
 }
 
-void DungMap_Backup() {  // 8ed94c
+void DungMap_Backup() { // 8ed94c
   if (--INIDISP_copy)
     return;
   MOSAIC_copy = 3;
@@ -2839,23 +3000,23 @@ void DungMap_Backup() {  // 8ed94c
   music_control = 0xf2;
 }
 
-void DungMap_FadeMapToBlack() {  // 8eda37
+void DungMap_FadeMapToBlack() { // 8eda37
   if (--INIDISP_copy)
     return;
   EnableForceBlank();
   overworld_map_state++;
   WORD(CGWSEL_copy) = mapbak_CGWSEL;
-  BG1HOFS_copy2 =  mapbak_BG1HOFS_copy2;
-  BG2HOFS_copy2 =  mapbak_BG2HOFS_copy2;
-  BG1VOFS_copy2 =  mapbak_BG1VOFS_copy2;
-  BG2VOFS_copy2 =  mapbak_BG2VOFS_copy2;
+  BG1HOFS_copy2 = mapbak_BG1HOFS_copy2;
+  BG2HOFS_copy2 = mapbak_BG2HOFS_copy2;
+  BG1VOFS_copy2 = mapbak_BG1VOFS_copy2;
+  BG2VOFS_copy2 = mapbak_BG2VOFS_copy2;
   BG3VOFS_copy2 = BG3HOFS_copy2 = 0;
   bg1_x_offset = mapbak_bg1_x_offset;
   bg1_y_offset = mapbak_bg1_y_offset;
   flag_update_cgram_in_nmi++;
 }
 
-void DungMap_RestoreOld() {  // 8eda79
+void DungMap_RestoreOld() { // 8eda79
   OrientLampLightCone();
   if (++INIDISP_copy != 0xf)
     return;
@@ -2867,7 +3028,7 @@ void DungMap_RestoreOld() {  // 8eda79
   HDMAEN_copy = mapbak_HDMAEN;
 }
 
-void Death_PlayerSwoon() {  // 8ff5e3
+void Death_PlayerSwoon() { // 8ff5e3
   int k = link_var30d;
   if (sign8(--some_animation_timer)) {
     k++;
@@ -2883,10 +3044,11 @@ void Death_PlayerSwoon() {  // 8ff5e3
     return;
   uint8 y = link_y_coord + 16 - BG2VOFS_copy2;
   uint8 x = link_x_coord + 7 - BG2HOFS_copy2;
-  SetOamPlain(&oam_buf[0x74], x, y, 0xaa, kDeath_SprFlags[link_is_on_lower_level] | 2, 2);
+  SetOamPlain(&oam_buf[0x74], x, y, 0xaa,
+              kDeath_SprFlags[link_is_on_lower_level] | 2, 2);
 }
 
-void Death_PrepFaint() {  // 8ffa6f
+void Death_PrepFaint() { // 8ffa6f
   link_direction_facing = 2;
   player_unk1 = 1;
   link_var30d = 0;
@@ -2909,7 +3071,8 @@ void Death_PrepFaint() {  // 8ffa6f
   if (link_item_moon_pearl)
     link_is_bunny = 0;
   link_timer_tempbunny = 0;
-  //bugfix: dying as permabunny doesn't restore link palette during death animation
+  // bugfix: dying as permabunny doesn't restore link palette during death
+  // animation
   if (enhanced_features0 & kFeatures0_MiscBugFixes)
     LoadActualGearPalettes();
   sound_effect_1 = 0x27 | Link_CalculateSfxPan();
@@ -2919,8 +3082,6 @@ void Death_PrepFaint() {  // 8ffa6f
   }
   index_of_changable_dungeon_objs[0] = index_of_changable_dungeon_objs[1] = 0;
 }
-
-
 
 void DisplaySelectMenu() {
   choice_in_multiselect_box_bak = choice_in_multiselect_box;

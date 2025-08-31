@@ -2,16 +2,14 @@
 #ifndef ZELDA3_SNES_PPU_H_
 #define ZELDA3_SNES_PPU_H_
 
+#include "snes/saveload.h"
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdint.h>
-#include <stdbool.h>
-#include "snes/saveload.h"
 typedef struct Ppu Ppu;
-
 #include "src/types.h"
-
 typedef struct BgLayer {
   uint16_t hScroll;
   uint16_t vScroll;
@@ -43,7 +41,6 @@ enum {
   // Disable sprite render limits
   kPpuRenderFlags_NoSpriteLimits = 8,
 };
-
 
 struct Ppu {
   bool lineHasSprites;
@@ -101,7 +98,7 @@ struct Ppu {
   BgLayer bgLayer[4];
   uint8_t scrollPrev;
   uint8_t scrollPrev2;
-  
+
   // mode 7
   int16_t m7matrix[8]; // a, b, c, d, x, y, h, v
   uint8_t m7prev;
@@ -115,7 +112,7 @@ struct Ppu {
   int32_t m7startY;
 
   uint16_t oam[0x110];
-  
+
   // store 31 extra entries to remove the need for clamp
   uint8_t brightnessMult[32 + 31];
   uint8_t brightnessMultHalf[32 * 2];
@@ -127,15 +124,16 @@ struct Ppu {
   uint16_t vram[0x8000];
 };
 
-Ppu* ppu_init();
-void ppu_free(Ppu* ppu);
-void ppu_reset(Ppu* ppu);
-void ppu_handleVblank(Ppu* ppu);
-void ppu_runLine(Ppu* ppu, int line);
-uint8_t ppu_read(Ppu* ppu, uint8_t adr);
-void ppu_write(Ppu* ppu, uint8_t adr, uint8_t val);
+Ppu *ppu_init(void *);
+void ppu_free(Ppu *ppu);
+void ppu_reset(Ppu *ppu);
+void ppu_handleVblank(Ppu *ppu);
+void ppu_runLine(Ppu *ppu, int line);
+uint8_t ppu_read(Ppu *ppu, uint8_t adr);
+void ppu_write(Ppu *ppu, uint8_t adr, uint8_t val);
 void ppu_saveload(Ppu *ppu, SaveLoadFunc *func, void *ctx);
-void PpuBeginDrawing(Ppu *ppu, uint8_t *buffer, size_t pitch, uint32_t render_flags);
+void PpuBeginDrawing(Ppu *ppu, uint8_t *buffer, size_t pitch,
+                     uint32_t render_flags);
 
 // Returns the current render scale, 1x = 256px, 2x=512px, 4x=1024px
 int PpuGetCurrentRenderScale(Ppu *ppu, uint32_t render_flags);
@@ -143,4 +141,4 @@ int PpuGetCurrentRenderScale(Ppu *ppu, uint32_t render_flags);
 void PpuSetMode7PerspectiveCorrection(Ppu *ppu, int low, int high);
 void PpuSetExtraSideSpace(Ppu *ppu, int left, int right, int bottom);
 
-#endif  // ZELDA3_SNES_PPU_H_
+#endif // ZELDA3_SNES_PPU_H_
